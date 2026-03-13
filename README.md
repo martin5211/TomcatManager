@@ -6,7 +6,7 @@ A VS Code extension for managing multiple Apache Tomcat servers from the command
 
 - **Run / Stop / Restart** any configured Tomcat instance
 - **Deploy** WAR files — automatically found in `target/`, `build/libs/`, or `dist/`
-- **Clean** a server's `work/` and `temp/` directories (stops it first if running)
+- **Clean** a server's `work/`, `temp/`, and `webapps/` directories (stops it first if running)
 - **Per-project overrides** for `CATALINA_OPTS` and `JAVA_OPTS`
 - JSON Schema validation for the config file, with autocomplete in VS Code
 
@@ -45,7 +45,7 @@ All available via `Ctrl+Shift+P`:
 | **Tomcat: Stop** | Stop the server |
 | **Tomcat: Restart** | Stop + start |
 | **Tomcat: Deploy** | Copy a WAR to `webapps/` |
-| **Tomcat: Clean** | Clear `work/` and `temp/` |
+| **Tomcat: Clean** | Clear `work/`, `temp/`, and `webapps/` |
 | **Tomcat: Configure Servers** | Create or open `tomcat.servers.json` |
 
 ## Building & Installing

@@ -189,7 +189,22 @@ export class TomcatManager {
       }
     }
 
-    vscode.window.showInformationMessage(`${config.server.name} work/ and temp/ directories cleaned.`);
+    // Clean webapps/ but preserve default Tomcat apps
+    const webappsDir = path.join(config.server.tomcatHome, 'webapps');
+    const preservedApps = new Set(['ROOT', 'manager', 'host-manager']);
+    if (fs.existsSync(webappsDir)) {
+      const entries = fs.readdirSync(webappsDir);
+      for (const entry of entries) {
+        if (preservedApps.has(entry)) {
+          continue;
+        }
+        const fullPath = path.join(webappsDir, entry);
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      }
+      this.outputChannel.appendLine(`Cleaned ${webappsDir} (preserved ${[...preservedApps].join(', ')})`);
+    }
+
+    vscode.window.showInformationMessage(`${config.server.name} work/, temp/, and webapps/ directories cleaned.`);
   }
 
   dispose(): void {
