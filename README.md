@@ -8,15 +8,15 @@ A VS Code extension for managing multiple Apache Tomcat servers from the command
 - **Deploy** WAR files — automatically found in `target/`, `build/libs/`, or `dist/`
 - **Clean** a server's `work/`, `temp/`, and `webapps/` directories (stops it first if running)
 - **Per-project overrides** for `CATALINA_OPTS` and `JAVA_OPTS`
-- JSON Schema validation for the config file, with autocomplete in VS Code
+- Native VS Code Settings UI with schema validation and autocomplete
 
 ## Configuration
 
-Drop a `tomcat.servers.json` in your workspace root (or run **Tomcat: Configure Servers** to scaffold one):
+Configure servers and projects in VS Code settings (or run **Tomcat: Configure Servers** to open the settings page). Add entries like this to your `settings.json`:
 
 ```json
 {
-  "servers": [
+  "tomcatManager.servers": [
     {
       "id": "tomcat9",
       "name": "Tomcat 9",
@@ -24,7 +24,7 @@ Drop a `tomcat.servers.json` in your workspace root (or run **Tomcat: Configure 
       "jdkHome": "/usr/lib/jvm/java-11"
     }
   ],
-  "projects": {
+  "tomcatManager.projects": {
     "my-webapp": {
       "serverId": "tomcat9",
       "catalinaOpts": "-Xmx512m"
@@ -46,7 +46,7 @@ All available via `Ctrl+Shift+P`:
 | **Tomcat: Restart** | Stop + start |
 | **Tomcat: Deploy** | Copy a WAR to `webapps/` |
 | **Tomcat: Clean** | Clear `work/`, `temp/`, and `webapps/` |
-| **Tomcat: Configure Servers** | Create or open `tomcat.servers.json` |
+| **Tomcat: Configure Servers** | Open Tomcat settings |
 
 ## Building & Installing
 

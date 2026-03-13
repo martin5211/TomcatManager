@@ -15,8 +15,8 @@
 ## Run in Development
 
 Open this folder in VS Code and press **F5**. A new VS Code window (Extension Development Host)
-will open with the extension loaded. Open any project that has a `tomcat.servers.json` in its root,
-or run **Tomcat: Configure Servers** from the command palette to create one.
+will open with the extension loaded. Configure your Tomcat servers via VS Code settings
+(`tomcatManager.servers`), or run **Tomcat: Configure Servers** from the command palette to open the settings page.
 
 ## Package as .vsix
 

@@ -16,7 +16,7 @@ export function activate(context: vscode.ExtensionContext) {
   const manager = new TomcatManager(configLoader, processRunner, outputChannel);
 
   configLoader.loadConfig().catch(() => {
-    outputChannel.appendLine('No tomcat.servers.json found. Use "Tomcat: Configure Servers".');
+    outputChannel.appendLine('No Tomcat servers configured. Use "Tomcat: Configure Servers" to open settings.');
   });
 
   context.subscriptions.push(
