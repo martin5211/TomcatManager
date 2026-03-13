@@ -21,7 +21,7 @@ Drop a `tomcat.servers.json` in your workspace root (or run **Tomcat: Configure 
       "id": "tomcat9",
       "name": "Tomcat 9",
       "tomcatHome": "/opt/tomcat9",
-      "jreHome": "/usr/lib/jvm/java-11"
+      "jdkHome": "/usr/lib/jvm/java-11"
     }
   ],
   "projects": {

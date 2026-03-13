@@ -2,7 +2,7 @@ export interface TomcatServer {
   id: string;
   name: string;
   tomcatHome: string;
-  jreHome: string;
+  jdkHome: string;
   startupScript?: string;
   shutdownScript?: string;
   defaultCatalinaOpts?: string;

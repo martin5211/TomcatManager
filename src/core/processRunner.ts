@@ -17,41 +17,45 @@ export class ProcessRunner {
 
   constructor(private outputChannel: vscode.OutputChannel) {}
 
+  private getCatalinaScript(config: ResolvedConfig): string {
+    return path.join(config.server.tomcatHome, 'bin', `catalina${SCRIPT_EXT}`);
+  }
+
   private getStartupScript(config: ResolvedConfig): string {
     if (config.server.startupScript) {
       return config.server.startupScript;
     }
-    return path.join(config.server.tomcatHome, 'bin', `startup${SCRIPT_EXT}`);
+    return this.getCatalinaScript(config);
   }
 
   private getShutdownScript(config: ResolvedConfig): string {
     if (config.server.shutdownScript) {
       return config.server.shutdownScript;
     }
-    return path.join(config.server.tomcatHome, 'bin', `shutdown${SCRIPT_EXT}`);
+    return this.getCatalinaScript(config);
   }
 
   private buildEnv(config: ResolvedConfig): NodeJS.ProcessEnv {
     return {
       ...process.env,
-      JAVA_HOME: config.server.jreHome,
+      JAVA_HOME: config.server.jdkHome,
       CATALINA_HOME: config.server.tomcatHome,
       JAVA_OPTS: config.javaOpts,
       CATALINA_OPTS: config.catalinaOpts,
     };
   }
 
-  private spawnScript(scriptPath: string, config: ResolvedConfig): ChildProcess {
+  private spawnScript(scriptPath: string, args: string[], config: ResolvedConfig): ChildProcess {
     const env = this.buildEnv(config);
 
     if (IS_WINDOWS) {
-      return spawn('cmd.exe', ['/c', scriptPath], {
+      return spawn('cmd.exe', ['/c', scriptPath, ...args], {
         env,
         cwd: config.server.tomcatHome,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } else {
-      return spawn(scriptPath, [], {
+      return spawn(scriptPath, args, {
         env,
         cwd: config.server.tomcatHome,
         detached: true,
@@ -95,10 +99,11 @@ export class ProcessRunner {
     }
 
     const scriptPath = this.getStartupScript(config);
-    this.outputChannel.appendLine(`Starting ${config.server.name} (${scriptPath})...`);
+    const startArgs = config.server.startupScript ? [] : ['run'];
+    this.outputChannel.appendLine(`Starting ${config.server.name} (${scriptPath} ${startArgs.join(' ')})...`);
     this.outputChannel.show(true);
 
-    const proc = this.spawnScript(scriptPath, config);
+    const proc = this.spawnScript(scriptPath, startArgs, config);
     const tracked: TrackedProcess = {
       process: proc,
       pgid: proc.pid,
@@ -123,9 +128,10 @@ export class ProcessRunner {
     const tracked = this.processes.get(serverId);
 
     const scriptPath = this.getShutdownScript(config);
-    this.outputChannel.appendLine(`Stopping ${config.server.name} (${scriptPath})...`);
+    const stopArgs = config.server.shutdownScript ? [] : ['stop'];
+    this.outputChannel.appendLine(`Stopping ${config.server.name} (${scriptPath} ${stopArgs.join(' ')})...`);
 
-    const shutdownProc = this.spawnScript(scriptPath, config);
+    const shutdownProc = this.spawnScript(scriptPath, stopArgs, config);
     this.pipeOutput(shutdownProc, `${config.server.name} shutdown`);
 
     await new Promise<void>((resolve) => {

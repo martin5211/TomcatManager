@@ -9,7 +9,7 @@ const EXAMPLE_CONFIG = `{
       "id": "tomcat9",
       "name": "Tomcat 9 Dev",
       "tomcatHome": "C:/apache-tomcat-9.0.85",
-      "jreHome": "C:/Program Files/Java/jdk-17",
+      "jdkHome": "C:/Program Files/Java/jdk-17",
       "defaultJavaOpts": "-Xms256m -Xmx512m",
       "defaultCatalinaOpts": "-Denv=dev"
     }

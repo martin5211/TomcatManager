@@ -10,7 +10,7 @@
       "description": "List of available Tomcat server installations",
       "items": {
         "type": "object",
-        "required": ["id", "name", "tomcatHome", "jreHome"],
+        "required": ["id", "name", "tomcatHome", "jdkHome"],
         "properties": {
           "id": {
             "type": "string",
@@ -24,9 +24,9 @@
             "type": "string",
             "description": "Path to Tomcat installation directory (CATALINA_HOME)"
           },
-          "jreHome": {
+          "jdkHome": {
             "type": "string",
-            "description": "Path to JRE/JDK installation (JAVA_HOME)"
+            "description": "Path to JDK installation (JAVA_HOME). Must point to a JDK, not a JRE."
           },
           "startupScript": {
             "type": "string",

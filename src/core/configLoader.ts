@@ -57,8 +57,8 @@ export class ConfigLoader {
       throw new Error('tomcat.servers.json: "projects" must be an object');
     }
     for (const server of config.servers) {
-      if (!server.id || !server.name || !server.tomcatHome || !server.jreHome) {
-        throw new Error(`tomcat.servers.json: server "${server.id || '(unnamed)'}" is missing required fields (id, name, tomcatHome, jreHome)`);
+      if (!server.id || !server.name || !server.tomcatHome || !server.jdkHome) {
+        throw new Error(`tomcat.servers.json: server "${server.id || '(unnamed)'}" is missing required fields: id, name, tomcatHome, jdkHome`);
       }
     }
   }
