@@ -60,13 +60,17 @@ function createManager(overrides?: Partial<ReturnType<typeof createMocks>>) {
 
 // Helpers
 
-/** Set the vscode workspace folder mock */
+/** Set the vscode workspace folder mock and wire up getWorkspaceFolder */
 function setWorkspaceFolder(fsPath: string, name = 'my-app') {
-  (vscode.workspace as any).workspaceFolders = [{ name, uri: { fsPath } }];
+  const folder = { name, uri: { fsPath } };
+  (vscode.workspace as any).workspaceFolders = [folder];
+  (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(folder);
 }
 
 function clearWorkspaceFolder() {
   (vscode.workspace as any).workspaceFolders = undefined;
+  (vscode.window as any).activeTextEditor = undefined;
+  (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(undefined);
 }
 
 // Tests
@@ -128,6 +132,41 @@ describe('resolveConfig', () => {
 
     expect(vscode.window.showQuickPick).toHaveBeenCalled();
     expect(configLoader.resolveForServer).toHaveBeenCalledWith('tomcat9');
+  });
+
+  it('uses active editor workspace folder over first folder', async () => {
+    const folderA = { name: 'project-a', uri: { fsPath: '/home/user/project-a' } };
+    const folderB = { name: 'project-b', uri: { fsPath: '/home/user/project-b' } };
+    (vscode.workspace as any).workspaceFolders = [folderA, folderB];
+    (vscode.window as any).activeTextEditor = {
+      document: { uri: { fsPath: '/home/user/project-b/src/Main.java' } },
+    };
+    (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(folderB);
+
+    const { manager, configLoader } = createManager();
+    const configWithOpts: ResolvedConfig = {
+      server: sampleServer,
+      catalinaOpts: '-Xmx2g',
+      javaOpts: '',
+    };
+    configLoader.resolveForProject.mockReturnValue(configWithOpts);
+
+    await manager.run();
+
+    expect(configLoader.resolveForProject).toHaveBeenCalledWith('project-b');
+  });
+
+  it('falls back to first folder when no active editor', async () => {
+    setWorkspaceFolder('/home/user/my-app');
+    (vscode.window as any).activeTextEditor = undefined;
+    (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(undefined);
+
+    const { manager, configLoader } = createManager();
+    configLoader.resolveForProject.mockReturnValue(sampleConfig);
+
+    await manager.run();
+
+    expect(configLoader.resolveForProject).toHaveBeenCalledWith('my-app');
   });
 
   it('shows error when no workspace folder is open', async () => {

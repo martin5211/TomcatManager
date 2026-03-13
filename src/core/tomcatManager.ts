@@ -12,6 +12,17 @@ export class TomcatManager {
     private outputChannel: vscode.OutputChannel,
   ) {}
 
+  private getActiveWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
+    const activeUri = vscode.window.activeTextEditor?.document.uri;
+    if (activeUri) {
+      const folder = vscode.workspace.getWorkspaceFolder(activeUri);
+      if (folder) {
+        return folder;
+      }
+    }
+    return vscode.workspace.workspaceFolders?.[0];
+  }
+
   private async resolveConfig(serverId?: string): Promise<ResolvedConfig | undefined> {
     if (serverId) {
       const config = this.configLoader.resolveForServer(serverId);
@@ -22,7 +33,7 @@ export class TomcatManager {
     }
 
     // Try to resolve from current workspace folder
-    const folder = vscode.workspace.workspaceFolders?.[0];
+    const folder = this.getActiveWorkspaceFolder();
     if (!folder) {
       vscode.window.showErrorMessage('No workspace folder open.');
       return undefined;
@@ -111,7 +122,7 @@ export class TomcatManager {
       return;
     }
 
-    const folder = vscode.workspace.workspaceFolders?.[0];
+    const folder = this.getActiveWorkspaceFolder();
     if (!folder) {
       vscode.window.showErrorMessage('No workspace folder open.');
       return;
