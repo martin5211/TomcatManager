@@ -13,36 +13,67 @@
     "color": "#1e1e1e",
     "theme": "dark"
   },
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other"],
-  "activationEvents": ["workspaceContains:tomcat.servers.json"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:tomcat.servers.json"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      { "command": "tomcatManager.deploy",           "title": "Tomcat: Deploy" },
-      { "command": "tomcatManager.clean",             "title": "Tomcat: Clean" },
-      { "command": "tomcatManager.run",               "title": "Tomcat: Run" },
-      { "command": "tomcatManager.stop",              "title": "Tomcat: Stop" },
-      { "command": "tomcatManager.restart",           "title": "Tomcat: Restart" },
-      { "command": "tomcatManager.configureServers",  "title": "Tomcat: Configure Servers" }
+      {
+        "command": "tomcatManager.deploy",
+        "title": "Tomcat: Deploy"
+      },
+      {
+        "command": "tomcatManager.clean",
+        "title": "Tomcat: Clean"
+      },
+      {
+        "command": "tomcatManager.run",
+        "title": "Tomcat: Run"
+      },
+      {
+        "command": "tomcatManager.stop",
+        "title": "Tomcat: Stop"
+      },
+      {
+        "command": "tomcatManager.restart",
+        "title": "Tomcat: Restart"
+      },
+      {
+        "command": "tomcatManager.configureServers",
+        "title": "Tomcat: Configure Servers"
+      }
     ],
     "jsonValidation": [
-      { "fileMatch": "tomcat.servers.json", "url": "./schemas/tomcat.servers.schema.json" }
+      {
+        "fileMatch": "tomcat.servers.json",
+        "url": "./schemas/tomcat.servers.schema.json"
+      }
     ]
   },
   "scripts": {
+    "test": "jest",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "package": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.3.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
     "@vscode/vsce": "^2.22.0",
     "eslint": "^8.56.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0"
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.3.0"
   }
 }
