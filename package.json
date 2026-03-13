@@ -2,11 +2,16 @@
   "name": "tomcat-manager",
   "displayName": "Tomcat Manager for VS Code",
   "description": "Manage multiple Tomcat servers with per-project configuration overrides",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "MartinCaminoa",
   "repository": {
     "type": "git",
     "url": "https://github.com/martin5211/TomcatManager"
+  },
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
   },
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
