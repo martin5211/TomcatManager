@@ -1,0 +1,43 @@
+{
+  "name": "tomcat-manager",
+  "displayName": "Tomcat Manager for VS Code",
+  "description": "Manage multiple Tomcat servers with per-project configuration overrides",
+  "version": "0.1.0",
+  "publisher": "MartinCaminoa",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martin5211/TomcatManager"
+  },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["workspaceContains:tomcat.servers.json"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "tomcatManager.deploy",           "title": "Tomcat: Deploy" },
+      { "command": "tomcatManager.clean",             "title": "Tomcat: Clean" },
+      { "command": "tomcatManager.run",               "title": "Tomcat: Run" },
+      { "command": "tomcatManager.stop",              "title": "Tomcat: Stop" },
+      { "command": "tomcatManager.restart",           "title": "Tomcat: Restart" },
+      { "command": "tomcatManager.configureServers",  "title": "Tomcat: Configure Servers" }
+    ],
+    "jsonValidation": [
+      { "fileMatch": "tomcat.servers.json", "url": "./schemas/tomcat.servers.schema.json" }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  }
+}

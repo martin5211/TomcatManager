@@ -1,0 +1,27 @@
+{
+  "servers": [
+    {
+      "id": "tomcat9",
+      "name": "Tomcat 9 Dev",
+      "tomcatHome": "C:/apache-tomcat-9.0.85",
+      "jreHome": "C:/Program Files/Java/jdk-17",
+      "defaultJavaOpts": "-Xms256m -Xmx512m",
+      "defaultCatalinaOpts": "-Denv=dev"
+    },
+    {
+      "id": "tomcat10",
+      "name": "Tomcat 10 Staging",
+      "tomcatHome": "/opt/apache-tomcat-10.1.18",
+      "jreHome": "/usr/lib/jvm/java-21",
+      "defaultJavaOpts": "-Xms512m -Xmx1024m",
+      "defaultCatalinaOpts": "-Denv=staging"
+    }
+  ],
+  "projects": {
+    "my-webapp": {
+      "serverId": "tomcat9",
+      "javaOpts": "-Xms128m -Xmx256m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005",
+      "catalinaOpts": "-Dapp.config=local"
+    }
+  }
+}

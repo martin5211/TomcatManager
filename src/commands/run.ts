@@ -1,0 +1,15 @@
+import * as vscode from 'vscode';
+import { TomcatManager } from '../core/tomcatManager';
+import { ConfigLoader } from '../core/configLoader';
+
+export function register(context: vscode.ExtensionContext, manager: TomcatManager, configLoader: ConfigLoader): vscode.Disposable {
+  return vscode.commands.registerCommand('tomcatManager.run', async () => {
+    try {
+      await configLoader.loadConfig();
+      await manager.run();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Tomcat Run: ${msg}`);
+    }
+  });
+}

@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tomcat Servers Configuration",
+  "description": "Configuration for multiple Tomcat servers with per-project overrides",
+  "type": "object",
+  "required": ["servers", "projects"],
+  "properties": {
+    "servers": {
+      "type": "array",
+      "description": "List of available Tomcat server installations",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "tomcatHome", "jreHome"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this server"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable display name"
+          },
+          "tomcatHome": {
+            "type": "string",
+            "description": "Path to Tomcat installation directory (CATALINA_HOME)"
+          },
+          "jreHome": {
+            "type": "string",
+            "description": "Path to JRE/JDK installation (JAVA_HOME)"
+          },
+          "startupScript": {
+            "type": "string",
+            "description": "Custom startup script path (defaults to bin/startup.sh or bin/startup.bat)"
+          },
+          "shutdownScript": {
+            "type": "string",
+            "description": "Custom shutdown script path (defaults to bin/shutdown.sh or bin/shutdown.bat)"
+          },
+          "defaultCatalinaOpts": {
+            "type": "string",
+            "description": "Default CATALINA_OPTS for this server"
+          },
+          "defaultJavaOpts": {
+            "type": "string",
+            "description": "Default JAVA_OPTS for this server"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "projects": {
+      "type": "object",
+      "description": "Per-project configuration overrides keyed by workspace folder name",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["serverId"],
+        "properties": {
+          "serverId": {
+            "type": "string",
+            "description": "ID of the server to use for this project"
+          },
+          "catalinaOpts": {
+            "type": "string",
+            "description": "Override CATALINA_OPTS for this project"
+          },
+          "javaOpts": {
+            "type": "string",
+            "description": "Override JAVA_OPTS for this project"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
