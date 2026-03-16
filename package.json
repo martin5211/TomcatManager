@@ -2,7 +2,7 @@
   "name": "tomcat-manager",
   "displayName": "Tomcat Manager for VS Code",
   "description": "Manage multiple Tomcat servers with per-project configuration overrides",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "MartinCaminoa",
   "repository": {
     "type": "git",
@@ -20,7 +20,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onDebugResolve:tomcat",
+    "onDebug"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -48,6 +50,84 @@
       {
         "command": "tomcatManager.configureServers",
         "title": "Tomcat: Configure Servers"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "tomcat",
+        "label": "Tomcat",
+        "initialConfigurations": [
+          {
+            "type": "tomcat",
+            "request": "launch",
+            "name": "Run Tomcat"
+          }
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "serverId": {
+                "type": "string",
+                "description": "Server ID from tomcatManager.servers (omit to auto-resolve)"
+              },
+              "jpda": {
+                "type": "boolean",
+                "default": false,
+                "description": "Enable JPDA debugging"
+              },
+              "jpdaPort": {
+                "type": "number",
+                "default": 8000,
+                "description": "JPDA debug port"
+              },
+              "jpdaSuspend": {
+                "type": "boolean",
+                "default": false,
+                "description": "Suspend JVM until debugger attaches"
+              },
+              "attachJavaDebugger": {
+                "type": "boolean",
+                "default": true,
+                "description": "Auto-attach VS Code Java debugger after JPDA start"
+              },
+              "attachDelay": {
+                "type": "number",
+                "default": 3000,
+                "description": "Milliseconds to wait before attaching Java debugger"
+              },
+              "catalinaOpts": {
+                "type": "string",
+                "description": "CATALINA_OPTS for this project (appended to server defaults)"
+              },
+              "javaOpts": {
+                "type": "string",
+                "description": "JAVA_OPTS for this project (appended to server defaults)"
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "Tomcat: Run Server",
+            "description": "Start a Tomcat server",
+            "body": {
+              "type": "tomcat",
+              "request": "launch",
+              "name": "${1:Run Tomcat}"
+            }
+          },
+          {
+            "label": "Tomcat: Debug (JPDA)",
+            "description": "Start Tomcat with JPDA debugging",
+            "body": {
+              "type": "tomcat",
+              "request": "launch",
+              "name": "${1:Debug Tomcat}",
+              "jpda": true,
+              "jpdaPort": "^8000"
+            }
+          }
+        ]
       }
     ],
     "configuration": {
@@ -92,30 +172,6 @@
               "defaultJavaOpts": {
                 "type": "string",
                 "description": "Default JAVA_OPTS for this server"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "tomcatManager.projects": {
-          "type": "object",
-          "default": {},
-          "description": "Per-project configuration overrides keyed by workspace folder name",
-          "additionalProperties": {
-            "type": "object",
-            "required": ["serverId"],
-            "properties": {
-              "serverId": {
-                "type": "string",
-                "description": "ID of the server to use for this project"
-              },
-              "catalinaOpts": {
-                "type": "string",
-                "description": "Override CATALINA_OPTS for this project"
-              },
-              "javaOpts": {
-                "type": "string",
-                "description": "Override JAVA_OPTS for this project"
               }
             },
             "additionalProperties": false

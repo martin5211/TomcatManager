@@ -91,7 +91,7 @@ export class ProcessRunner {
     }
   }
 
-  async run(config: ResolvedConfig): Promise<void> {
+  async run(config: ResolvedConfig): Promise<{ onExit: Promise<number | null> }> {
     const serverId = config.server.id;
 
     if (this.isRunning(serverId)) {
@@ -112,15 +112,21 @@ export class ProcessRunner {
     this.processes.set(serverId, tracked);
     this.pipeOutput(proc, config.server.name);
 
-    proc.on('close', (code) => {
-      this.outputChannel.appendLine(`[${config.server.name}] Process exited with code ${code}`);
-      this.processes.delete(serverId);
+    const onExit = new Promise<number | null>((resolve) => {
+      proc.on('close', (code) => {
+        this.outputChannel.appendLine(`[${config.server.name}] Process exited with code ${code}`);
+        this.processes.delete(serverId);
+        resolve(code);
+      });
+
+      proc.on('error', (err) => {
+        this.outputChannel.appendLine(`[${config.server.name}] Error: ${err.message}`);
+        this.processes.delete(serverId);
+        resolve(null);
+      });
     });
 
-    proc.on('error', (err) => {
-      this.outputChannel.appendLine(`[${config.server.name}] Error: ${err.message}`);
-      this.processes.delete(serverId);
-    });
+    return { onExit };
   }
 
   async stop(config: ResolvedConfig): Promise<void> {

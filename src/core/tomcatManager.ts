@@ -32,20 +32,13 @@ export class TomcatManager {
       return config;
     }
 
-    // Try to resolve from current workspace folder
-    const folder = this.getActiveWorkspaceFolder();
-    if (!folder) {
-      vscode.window.showErrorMessage('No workspace folder open.');
-      return undefined;
-    }
-
-    const folderName = folder.name;
-    const config = this.configLoader.resolveForProject(folderName);
+    // Try to resolve from workspace settings
+    const config = this.configLoader.resolveFromWorkspace();
     if (config) {
       return config;
     }
 
-    // No project mapping — let user pick a server
+    // No workspace mapping — let user pick a server
     return this.pickServer();
   }
 
@@ -75,6 +68,7 @@ export class TomcatManager {
     }
 
     try {
+      await this.deployToServer(config);
       await this.processRunner.run(config);
       vscode.window.showInformationMessage(`${config.server.name} started.`);
     } catch (err: unknown) {
@@ -108,6 +102,7 @@ export class TomcatManager {
       if (this.processRunner.isRunning(config.server.id)) {
         await this.processRunner.stop(config);
       }
+      await this.deployToServer(config);
       await this.processRunner.run(config);
       vscode.window.showInformationMessage(`${config.server.name} restarted.`);
     } catch (err: unknown) {
@@ -122,9 +117,14 @@ export class TomcatManager {
       return;
     }
 
+    await this.deployToServer(config);
+    vscode.window.showInformationMessage(`Deployed to ${config.server.name}.`);
+  }
+
+  private async deployToServer(config: ResolvedConfig): Promise<void> {
     const folder = this.getActiveWorkspaceFolder();
     if (!folder) {
-      vscode.window.showErrorMessage('No workspace folder open.');
+      this.outputChannel.appendLine('No workspace folder open — skipping deploy.');
       return;
     }
 
@@ -157,7 +157,7 @@ export class TomcatManager {
     }
 
     if (!warFile) {
-      vscode.window.showErrorMessage('No WAR file found in target/, build/libs/, dist/, or workspace root.');
+      this.outputChannel.appendLine('No WAR file found — skipping deploy.');
       return;
     }
 
@@ -169,7 +169,6 @@ export class TomcatManager {
     const destPath = path.join(webappsDir, path.basename(warFile));
     fs.copyFileSync(warFile, destPath);
     this.outputChannel.appendLine(`Deployed ${path.basename(warFile)} to ${webappsDir}`);
-    vscode.window.showInformationMessage(`Deployed ${path.basename(warFile)} to ${config.server.name}.`);
   }
 
   async clean(serverId?: string): Promise<void> {

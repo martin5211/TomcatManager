@@ -9,19 +9,26 @@ export interface TomcatServer {
   defaultJavaOpts?: string;
 }
 
-export interface ProjectConfig {
-  serverId: string;
-  catalinaOpts?: string;
-  javaOpts?: string;
-}
-
 export interface TomcatServersConfig {
   servers: TomcatServer[];
-  projects: Record<string, ProjectConfig>;
 }
 
 export interface ResolvedConfig {
   server: TomcatServer;
   catalinaOpts: string;
   javaOpts: string;
+}
+
+export interface TomcatLaunchConfig {
+  type: 'tomcat';
+  request: 'launch';
+  name: string;
+  serverId?: string;
+  jpda?: boolean;
+  jpdaPort?: number;
+  jpdaSuspend?: boolean;
+  attachJavaDebugger?: boolean;
+  attachDelay?: number;
+  catalinaOpts?: string;
+  javaOpts?: string;
 }

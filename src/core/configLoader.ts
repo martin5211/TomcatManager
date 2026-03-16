@@ -8,7 +8,6 @@ export class ConfigLoader {
     const cfg = vscode.workspace.getConfiguration('tomcatManager');
     const parsed: TomcatServersConfig = {
       servers: cfg.get<TomcatServer[]>('servers', []),
-      projects: cfg.get<Record<string, any>>('projects', {}),
     };
 
     this.validate(parsed);
@@ -19,9 +18,6 @@ export class ConfigLoader {
   private validate(config: TomcatServersConfig): void {
     if (!Array.isArray(config.servers)) {
       throw new Error('tomcatManager.servers must be an array');
-    }
-    if (!config.projects || typeof config.projects !== 'object') {
-      throw new Error('tomcatManager.projects must be an object');
     }
     for (const server of config.servers) {
       if (!server.id || !server.name || !server.tomcatHome || !server.jdkHome) {
@@ -34,26 +30,38 @@ export class ConfigLoader {
     return this.config?.servers ?? [];
   }
 
-  resolveForProject(folderName: string): ResolvedConfig | undefined {
+  resolveFromWorkspace(): ResolvedConfig | undefined {
     if (!this.config) {
       return undefined;
     }
 
-    const projectConfig = this.config.projects[folderName];
-    if (!projectConfig) {
+    const configurations = vscode.workspace
+      .getConfiguration('launch')
+      .get<any[]>('configurations', []);
+    const tomcatConfig = configurations.find((c: any) => c.type === 'tomcat');
+
+    const serverId = tomcatConfig?.serverId ?? '';
+
+    let server: TomcatServer | undefined;
+    if (serverId) {
+      server = this.config.servers.find(s => s.id === serverId);
+      if (!server) {
+        vscode.window.showErrorMessage(`Server "${serverId}" referenced in launch.json not found.`);
+        return undefined;
+      }
+    } else if (this.config.servers.length === 1) {
+      server = this.config.servers[0];
+    } else {
       return undefined;
     }
 
-    const server = this.config.servers.find(s => s.id === projectConfig.serverId);
-    if (!server) {
-      vscode.window.showErrorMessage(`Server "${projectConfig.serverId}" referenced by project "${folderName}" not found.`);
-      return undefined;
-    }
+    const launchCatalinaOpts = tomcatConfig?.catalinaOpts ?? '';
+    const launchJavaOpts = tomcatConfig?.javaOpts ?? '';
 
     return {
       server,
-      catalinaOpts: projectConfig.catalinaOpts ?? server.defaultCatalinaOpts ?? '',
-      javaOpts: projectConfig.javaOpts ?? server.defaultJavaOpts ?? '',
+      catalinaOpts: `${server.defaultCatalinaOpts ?? ''} ${launchCatalinaOpts}`.trim(),
+      javaOpts: `${server.defaultJavaOpts ?? ''} ${launchJavaOpts}`.trim(),
     };
   }
 

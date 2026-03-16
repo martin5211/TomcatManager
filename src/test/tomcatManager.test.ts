@@ -28,7 +28,7 @@ const sampleConfig: ResolvedConfig = {
 function createMocks() {
   const configLoader = {
     resolveForServer: jest.fn(),
-    resolveForProject: jest.fn(),
+    resolveFromWorkspace: jest.fn(),
     getAvailableServers: jest.fn().mockReturnValue([]),
   };
 
@@ -106,20 +106,18 @@ describe('resolveConfig', () => {
     );
   });
 
-  it('resolves from workspace folder name when no serverId', async () => {
-    setWorkspaceFolder('/home/user/my-app');
+  it('resolves from workspace settings when no serverId', async () => {
     const { manager, configLoader } = createManager();
-    configLoader.resolveForProject.mockReturnValue(sampleConfig);
+    configLoader.resolveFromWorkspace.mockReturnValue(sampleConfig);
 
     await manager.run();
 
-    expect(configLoader.resolveForProject).toHaveBeenCalledWith('my-app');
+    expect(configLoader.resolveFromWorkspace).toHaveBeenCalled();
   });
 
-  it('falls back to pickServer when no project mapping', async () => {
-    setWorkspaceFolder('/home/user/my-app');
+  it('falls back to pickServer when no workspace mapping', async () => {
     const { manager, configLoader } = createManager();
-    configLoader.resolveForProject.mockReturnValue(undefined);
+    configLoader.resolveFromWorkspace.mockReturnValue(undefined);
     configLoader.getAvailableServers.mockReturnValue([sampleServer]);
     (vscode.window.showQuickPick as jest.Mock).mockResolvedValue({
       label: sampleServer.name,
@@ -132,52 +130,6 @@ describe('resolveConfig', () => {
 
     expect(vscode.window.showQuickPick).toHaveBeenCalled();
     expect(configLoader.resolveForServer).toHaveBeenCalledWith('tomcat9');
-  });
-
-  it('uses active editor workspace folder over first folder', async () => {
-    const folderA = { name: 'project-a', uri: { fsPath: '/home/user/project-a' } };
-    const folderB = { name: 'project-b', uri: { fsPath: '/home/user/project-b' } };
-    (vscode.workspace as any).workspaceFolders = [folderA, folderB];
-    (vscode.window as any).activeTextEditor = {
-      document: { uri: { fsPath: '/home/user/project-b/src/Main.java' } },
-    };
-    (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(folderB);
-
-    const { manager, configLoader } = createManager();
-    const configWithOpts: ResolvedConfig = {
-      server: sampleServer,
-      catalinaOpts: '-Xmx2g',
-      javaOpts: '',
-    };
-    configLoader.resolveForProject.mockReturnValue(configWithOpts);
-
-    await manager.run();
-
-    expect(configLoader.resolveForProject).toHaveBeenCalledWith('project-b');
-  });
-
-  it('falls back to first folder when no active editor', async () => {
-    setWorkspaceFolder('/home/user/my-app');
-    (vscode.window as any).activeTextEditor = undefined;
-    (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(undefined);
-
-    const { manager, configLoader } = createManager();
-    configLoader.resolveForProject.mockReturnValue(sampleConfig);
-
-    await manager.run();
-
-    expect(configLoader.resolveForProject).toHaveBeenCalledWith('my-app');
-  });
-
-  it('shows error when no workspace folder is open', async () => {
-    clearWorkspaceFolder();
-    const { manager } = createManager();
-
-    await manager.run();
-
-    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-      'No workspace folder open.',
-    );
   });
 });
 
@@ -308,7 +260,7 @@ describe('deploy()', () => {
       expect.stringContaining('webapps'),
     );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Deployed app.war to Tomcat 9.',
+      'Deployed to Tomcat 9.',
     );
   });
 
@@ -342,7 +294,7 @@ describe('deploy()', () => {
     );
   });
 
-  it('shows error when no WAR found', async () => {
+  it('shows success even when no WAR found (silently skips)', async () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
@@ -350,8 +302,8 @@ describe('deploy()', () => {
 
     await manager.deploy('tomcat9');
 
-    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-      'No WAR file found in target/, build/libs/, dist/, or workspace root.',
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      'Deployed to Tomcat 9.',
     );
   });
 

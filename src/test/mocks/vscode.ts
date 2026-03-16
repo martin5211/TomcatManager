@@ -13,3 +13,29 @@ export const workspace = {
     | undefined,
   getWorkspaceFolder: jest.fn(),
 };
+
+export const debug = {
+  startDebugging: jest.fn().mockResolvedValue(true),
+};
+
+export class EventEmitter {
+  private listeners: Array<(...args: any[]) => void> = [];
+  event = (listener: (...args: any[]) => void) => {
+    this.listeners.push(listener);
+    return { dispose: () => { this.listeners = this.listeners.filter(l => l !== listener); } };
+  };
+  fire(data: any) {
+    for (const listener of this.listeners) {
+      listener(data);
+    }
+  }
+  dispose() {
+    this.listeners = [];
+  }
+}
+
+export class DebugAdapterInlineImplementation {
+  constructor(public adapter: any) {}
+}
+
+export class DebugAdapter {}
