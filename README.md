@@ -1,7 +1,7 @@
 # Tomcat Manager for VS Code
 
-[![Version](https://vsmarketplacebadges.dev/version/MartinCaminoa.tomcat-manager.svg)](https://marketplace.visualstudio.com/items?itemName=MartinCaminoa.tomcat-manager)
-[![Installs](https://vsmarketplacebadges.dev/installs-short/MartinCaminoa.tomcat-manager.svg)](https://marketplace.visualstudio.com/items?itemName=MartinCaminoa.tomcat-manager)
+[![Version](https://vsmarketplacebadges.dev/version/MartinCaminoa.tomcat-manager.png)](https://marketplace.visualstudio.com/items?itemName=MartinCaminoa.tomcat-manager)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/MartinCaminoa.tomcat-manager.png)](https://marketplace.visualstudio.com/items?itemName=MartinCaminoa.tomcat-manager)
 
 A VS Code extension for managing multiple Apache Tomcat servers from the command palette or from Run and Debug view. Define your servers once, bind them to workspaces, and run/stop/deploy without leaving the editor.
 
