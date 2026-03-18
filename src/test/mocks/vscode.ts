@@ -12,6 +12,11 @@ export const workspace = {
     | { name: string; uri: { fsPath: string } }[]
     | undefined,
   getWorkspaceFolder: jest.fn(),
+  getConfiguration: jest.fn().mockReturnValue({
+    get: jest.fn().mockReturnValue([]),
+    update: jest.fn().mockResolvedValue(undefined),
+  }),
+  onDidChangeConfiguration: jest.fn().mockReturnValue({ dispose: jest.fn() }),
 };
 
 export const debug = {

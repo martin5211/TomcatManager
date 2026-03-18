@@ -23,7 +23,7 @@ will open with the extension loaded. Configure your Tomcat servers via VS Code s
     npm install -g @vscode/vsce
     vsce package
 
-This creates `tomcat-manager-0.1.0.vsix`.
+This creates `tomcat-manager-<version>.vsix`.
 
 ## Install the .vsix
 
@@ -31,7 +31,7 @@ From VS Code: **Extensions** sidebar → **...** menu → **Install from VSIX...
 
 Or from the terminal:
 
-    code --install-extension tomcat-manager-0.1.0.vsix
+    code --install-extension tomcat-manager-<version>.vsix
 
 ## Uninstall
 

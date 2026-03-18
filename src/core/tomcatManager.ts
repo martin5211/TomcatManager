@@ -68,7 +68,7 @@ export class TomcatManager {
     }
 
     try {
-      await this.deployToServer(config);
+      await this.deployOnly(config);
       await this.processRunner.run(config);
       vscode.window.showInformationMessage(`${config.server.name} started.`);
     } catch (err: unknown) {
@@ -102,7 +102,7 @@ export class TomcatManager {
       if (this.processRunner.isRunning(config.server.id)) {
         await this.processRunner.stop(config);
       }
-      await this.deployToServer(config);
+      await this.deployOnly(config);
       await this.processRunner.run(config);
       vscode.window.showInformationMessage(`${config.server.name} restarted.`);
     } catch (err: unknown) {
@@ -117,15 +117,18 @@ export class TomcatManager {
       return;
     }
 
-    await this.deployToServer(config);
-    vscode.window.showInformationMessage(`Deployed to ${config.server.name}.`);
+    const warName = await this.deployOnly(config);
+    const msg = warName
+      ? `Deployed ${warName} to ${config.server.name}.`
+      : `No WAR file found to deploy to ${config.server.name}.`;
+    vscode.window.showInformationMessage(msg);
   }
 
-  private async deployToServer(config: ResolvedConfig): Promise<void> {
-    const folder = this.getActiveWorkspaceFolder();
+  async deployOnly(config: ResolvedConfig, workspaceFolder?: vscode.WorkspaceFolder): Promise<string | undefined> {
+    const folder = workspaceFolder ?? this.getActiveWorkspaceFolder();
     if (!folder) {
       this.outputChannel.appendLine('No workspace folder open — skipping deploy.');
-      return;
+      return undefined;
     }
 
     // Look for WAR files in common build output locations
@@ -158,7 +161,7 @@ export class TomcatManager {
 
     if (!warFile) {
       this.outputChannel.appendLine('No WAR file found — skipping deploy.');
-      return;
+      return undefined;
     }
 
     const webappsDir = path.join(config.server.tomcatHome, 'webapps');
@@ -166,9 +169,11 @@ export class TomcatManager {
       fs.mkdirSync(webappsDir, { recursive: true });
     }
 
-    const destPath = path.join(webappsDir, path.basename(warFile));
+    const warName = path.basename(warFile);
+    const destPath = path.join(webappsDir, warName);
     fs.copyFileSync(warFile, destPath);
-    this.outputChannel.appendLine(`Deployed ${path.basename(warFile)} to ${webappsDir}`);
+    this.outputChannel.appendLine(`Deployed ${warName} to ${webappsDir}`);
+    return warName;
   }
 
   async clean(serverId?: string): Promise<void> {

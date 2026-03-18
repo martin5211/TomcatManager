@@ -2,7 +2,7 @@
   "name": "tomcat-manager",
   "displayName": "Tomcat Manager for VS Code",
   "description": "Manage multiple Tomcat servers with per-project configuration overrides",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "MartinCaminoa",
   "repository": {
     "type": "git",
@@ -182,19 +182,15 @@
   },
   "scripts": {
     "test": "jest",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && vsce package",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
     "@vscode/vsce": "^2.22.0",
-    "eslint": "^8.56.0",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.3.0"

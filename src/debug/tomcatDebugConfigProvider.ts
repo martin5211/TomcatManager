@@ -34,10 +34,15 @@ export class TomcatDebugConfigProvider implements vscode.DebugConfigurationProvi
 
     // Try to auto-fill serverId from workspace settings
     if (!config.serverId) {
-      const resolved = this.configLoader.resolveFromWorkspace();
+      const resolved = this.configLoader.resolveFromWorkspace(folder);
       if (resolved) {
         config.serverId = resolved.server.id;
       }
+    }
+
+    // Pass the workspace folder URI so the adapter can scope config reads
+    if (folder) {
+      config.__workspaceFolderUri = folder.uri.toString();
     }
 
     return config;

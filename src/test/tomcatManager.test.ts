@@ -260,7 +260,7 @@ describe('deploy()', () => {
       expect.stringContaining('webapps'),
     );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Deployed to Tomcat 9.',
+      'Deployed app.war to Tomcat 9.',
     );
   });
 
@@ -294,7 +294,7 @@ describe('deploy()', () => {
     );
   });
 
-  it('shows success even when no WAR found (silently skips)', async () => {
+  it('shows message when no WAR found', async () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
@@ -303,7 +303,7 @@ describe('deploy()', () => {
     await manager.deploy('tomcat9');
 
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Deployed to Tomcat 9.',
+      'No WAR file found to deploy to Tomcat 9.',
     );
   });
 

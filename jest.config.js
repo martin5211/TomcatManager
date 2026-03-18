@@ -6,4 +6,5 @@ module.exports = {
   moduleNameMapper: {
     '^vscode$': '<rootDir>/src/test/mocks/vscode.ts',
   },
+  forceExit: true,
 };

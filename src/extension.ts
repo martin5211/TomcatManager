@@ -22,10 +22,12 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   const debugProvider = new TomcatDebugConfigProvider(configLoader);
-  const debugFactory = new TomcatDebugAdapterFactory(processRunner, configLoader, outputChannel);
+  const debugFactory = new TomcatDebugAdapterFactory(processRunner, configLoader, outputChannel, manager);
 
   context.subscriptions.push(
-    configLoader.watchConfig(() => configLoader.loadConfig().catch(() => {})),
+    configLoader.watchConfig(() => configLoader.loadConfig().catch((err: unknown) => {
+      outputChannel.appendLine(`Config reload failed: ${err instanceof Error ? err.message : String(err)}`);
+    })),
     deploy.register(context, manager, configLoader),
     clean.register(context, manager, configLoader),
     run.register(context, manager, configLoader),

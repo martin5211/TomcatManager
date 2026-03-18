@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ProcessRunner } from '../core/processRunner';
 import { ConfigLoader } from '../core/configLoader';
+import { TomcatManager } from '../core/tomcatManager';
 import { TomcatLaunchConfig, ResolvedConfig } from '../types/config';
 
 interface DAPMessage {
@@ -35,6 +36,7 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
   private seq = 1;
   private activeLaunchConfig: ResolvedConfig | undefined;
   private activeServerId: string | undefined;
+  private attachTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly _onDidSendMessage = new vscode.EventEmitter<any>();
   readonly onDidSendMessage = this._onDidSendMessage.event;
 
@@ -42,6 +44,7 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
     private processRunner: ProcessRunner,
     private configLoader: ConfigLoader,
     private outputChannel: vscode.OutputChannel,
+    private manager: TomcatManager,
   ) {}
 
   handleMessage(message: DAPMessage): void {
@@ -96,6 +99,11 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
     }
 
     try {
+      const folderUri = (launchConfig as any).__workspaceFolderUri;
+      const workspaceFolder = folderUri
+        ? vscode.workspace.workspaceFolders?.find(f => f.uri.toString() === folderUri)
+        : undefined;
+      await this.manager.deployOnly(resolved, workspaceFolder);
       const { onExit } = await this.processRunner.run(resolved);
       this.activeLaunchConfig = resolved;
       this.activeServerId = serverId;
@@ -112,7 +120,8 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
       if (launchConfig.jpda && (launchConfig.attachJavaDebugger ?? true)) {
         const delay = launchConfig.attachDelay ?? 3000;
         const port = launchConfig.jpdaPort ?? 8000;
-        setTimeout(() => {
+        this.attachTimer = setTimeout(() => {
+          this.attachTimer = undefined;
           vscode.debug.startDebugging(undefined, {
             type: 'java',
             request: 'attach',
@@ -128,6 +137,10 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
   }
 
   private async onStop(request: DAPRequest): Promise<void> {
+    if (this.attachTimer) {
+      clearTimeout(this.attachTimer);
+      this.attachTimer = undefined;
+    }
     if (this.activeLaunchConfig) {
       try {
         await this.processRunner.stop(this.activeLaunchConfig);
@@ -148,7 +161,11 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
       resolved = this.configLoader.resolveForServer(launchConfig.serverId);
     } else {
       // Try workspace launch.json (serverId + catalinaOpts/javaOpts)
-      resolved = this.configLoader.resolveFromWorkspace();
+      const folderUri = (launchConfig as any).__workspaceFolderUri;
+      const folder = folderUri
+        ? { uri: vscode.Uri.parse(folderUri) } as vscode.WorkspaceFolder
+        : undefined;
+      resolved = this.configLoader.resolveFromWorkspace(folder);
       if (!resolved) {
         // Fall back to single-server auto-select
         const servers = this.configLoader.getAvailableServers();
@@ -197,6 +214,10 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
   }
 
   dispose(): void {
+    if (this.attachTimer) {
+      clearTimeout(this.attachTimer);
+      this.attachTimer = undefined;
+    }
     this._onDidSendMessage.dispose();
   }
 }

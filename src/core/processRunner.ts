@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import { ChildProcess, spawn } from 'child_process';
 import { ResolvedConfig } from '../types/config';
@@ -65,12 +66,14 @@ export class ProcessRunner {
   }
 
   private pipeOutput(proc: ChildProcess, label: string): void {
-    proc.stdout?.on('data', (data: Buffer) => {
-      this.outputChannel.appendLine(`[${label}] ${data.toString().trimEnd()}`);
-    });
-    proc.stderr?.on('data', (data: Buffer) => {
-      this.outputChannel.appendLine(`[${label} ERR] ${data.toString().trimEnd()}`);
-    });
+    const writeLines = (data: Buffer) => {
+      const lines = data.toString().trimEnd().split(/\r?\n/);
+      for (const line of lines) {
+        this.outputChannel.appendLine(`[${label}] ${line}`);
+      }
+    };
+    proc.stdout?.on('data', writeLines);
+    proc.stderr?.on('data', writeLines);
   }
 
   private forceKill(tracked: TrackedProcess): void {
@@ -99,6 +102,9 @@ export class ProcessRunner {
     }
 
     const scriptPath = this.getStartupScript(config);
+    if (!fs.existsSync(scriptPath)) {
+      throw new Error(`Startup script not found: ${scriptPath}`);
+    }
     const startArgs = config.server.startupScript ? [] : ['run'];
     this.outputChannel.appendLine(`Starting ${config.server.name} (${scriptPath} ${startArgs.join(' ')})...`);
     this.outputChannel.show(true);
@@ -134,6 +140,9 @@ export class ProcessRunner {
     const tracked = this.processes.get(serverId);
 
     const scriptPath = this.getShutdownScript(config);
+    if (!fs.existsSync(scriptPath)) {
+      throw new Error(`Shutdown script not found: ${scriptPath}`);
+    }
     const stopArgs = config.server.shutdownScript ? [] : ['stop'];
     this.outputChannel.appendLine(`Stopping ${config.server.name} (${scriptPath} ${stopArgs.join(' ')})...`);
 

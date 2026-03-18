@@ -30,13 +30,13 @@ export class ConfigLoader {
     return this.config?.servers ?? [];
   }
 
-  resolveFromWorkspace(): ResolvedConfig | undefined {
+  resolveFromWorkspace(folder?: vscode.WorkspaceFolder): ResolvedConfig | undefined {
     if (!this.config) {
       return undefined;
     }
 
     const configurations = vscode.workspace
-      .getConfiguration('launch')
+      .getConfiguration('launch', folder?.uri)
       .get<any[]>('configurations', []);
     const tomcatConfig = configurations.find((c: any) => c.type === 'tomcat');
 

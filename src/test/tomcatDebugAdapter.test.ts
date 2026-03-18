@@ -41,7 +41,11 @@ function createMocks() {
     show: jest.fn(),
   };
 
-  return { processRunner, configLoader, outputChannel, exitResolve };
+  const manager = {
+    deployOnly: jest.fn().mockResolvedValue(undefined),
+  };
+
+  return { processRunner, configLoader, outputChannel, manager, exitResolve };
 }
 
 function createAdapter(mocks: ReturnType<typeof createMocks>) {
@@ -49,6 +53,7 @@ function createAdapter(mocks: ReturnType<typeof createMocks>) {
     mocks.processRunner as any,
     mocks.configLoader as any,
     mocks.outputChannel as any,
+    mocks.manager as any,
   );
 }
 
