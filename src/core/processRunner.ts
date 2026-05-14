@@ -12,38 +12,64 @@ interface TrackedProcess {
 const IS_WINDOWS = process.platform === 'win32';
 const SCRIPT_EXT = IS_WINDOWS ? '.bat' : '.sh';
 const STOP_TIMEOUT_MS = 10_000;
+const KILL_TIMEOUT_MS = 5_000;
+const READY_TIMEOUT_MS = 60_000;
+const READY_PATTERN = /Server startup in \d+(?:[.,]\d+)?\s*m?s/i;
+
+export interface RunResult {
+  onExit: Promise<number | null>;
+  ready: Promise<{ detected: boolean }>;
+}
 
 export class ProcessRunner {
   private processes = new Map<string, TrackedProcess>();
+  private readonly _onDidChangeRunning = new vscode.EventEmitter<void>();
+  readonly onDidChangeRunning = this._onDidChangeRunning.event;
 
   constructor(private outputChannel: vscode.OutputChannel) {}
+
+  isAnyRunning(): boolean {
+    for (const [, tracked] of this.processes) {
+      if (tracked.process.exitCode === null) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   private getCatalinaScript(config: ResolvedConfig): string {
     return path.join(config.server.tomcatHome, 'bin', `catalina${SCRIPT_EXT}`);
   }
 
   private getStartupScript(config: ResolvedConfig): string {
-    if (config.server.startupScript) {
-      return config.server.startupScript;
-    }
-    return this.getCatalinaScript(config);
+    return config.server.startupScript ?? this.getCatalinaScript(config);
   }
 
   private getShutdownScript(config: ResolvedConfig): string {
-    if (config.server.shutdownScript) {
-      return config.server.shutdownScript;
-    }
-    return this.getCatalinaScript(config);
+    return config.server.shutdownScript ?? this.getCatalinaScript(config);
+  }
+
+  private getStartupArgs(config: ResolvedConfig): string[] {
+    return config.server.startupScript ? (config.server.startupArgs ?? []) : ['run'];
+  }
+
+  private getShutdownArgs(config: ResolvedConfig): string[] {
+    return config.server.shutdownScript ? (config.server.shutdownArgs ?? []) : ['stop'];
   }
 
   private buildEnv(config: ResolvedConfig): NodeJS.ProcessEnv {
-    return {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
       JAVA_HOME: config.server.jdkHome,
       CATALINA_HOME: config.server.tomcatHome,
-      JAVA_OPTS: config.javaOpts,
-      CATALINA_OPTS: config.catalinaOpts,
     };
+    if (config.javaOpts) {
+      env.JAVA_OPTS = config.javaOpts;
+    }
+    if (config.catalinaOpts) {
+      env.CATALINA_OPTS = config.catalinaOpts;
+    }
+    return env;
   }
 
   private spawnScript(scriptPath: string, args: string[], config: ResolvedConfig): ChildProcess {
@@ -55,46 +81,93 @@ export class ProcessRunner {
         cwd: config.server.tomcatHome,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-    } else {
-      return spawn(scriptPath, args, {
-        env,
-        cwd: config.server.tomcatHome,
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
     }
+    return spawn(scriptPath, args, {
+      env,
+      cwd: config.server.tomcatHome,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   }
 
   private pipeOutput(proc: ChildProcess, label: string): void {
-    const writeLines = (data: Buffer) => {
-      const lines = data.toString().trimEnd().split(/\r?\n/);
-      for (const line of lines) {
-        this.outputChannel.appendLine(`[${label}] ${line}`);
-      }
+    const wire = (stream: NodeJS.ReadableStream | null) => {
+      if (!stream) return;
+      let buf = '';
+      stream.on('data', (chunk: Buffer) => {
+        buf += chunk.toString();
+        const lines = buf.split(/\r?\n/);
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          this.outputChannel.appendLine(`[${label}] ${line}`);
+        }
+      });
+      stream.on('end', () => {
+        if (buf.length > 0) {
+          this.outputChannel.appendLine(`[${label}] ${buf}`);
+          buf = '';
+        }
+      });
     };
-    proc.stdout?.on('data', writeLines);
-    proc.stderr?.on('data', writeLines);
+    wire(proc.stdout);
+    wire(proc.stderr);
   }
 
-  private forceKill(tracked: TrackedProcess): void {
-    try {
-      if (IS_WINDOWS) {
-        const pid = tracked.process.pid;
-        if (pid !== undefined) {
-          spawn('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
+  private forceKill(tracked: TrackedProcess): Promise<void> {
+    return new Promise<void>((resolve) => {
+      try {
+        if (IS_WINDOWS) {
+          const pid = tracked.process.pid;
+          if (pid === undefined) {
+            resolve();
+            return;
+          }
+          const kill = spawn('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
+          const fallback = setTimeout(resolve, KILL_TIMEOUT_MS);
+          const finish = () => {
+            clearTimeout(fallback);
+            resolve();
+          };
+          kill.on('close', finish);
+          kill.on('error', finish);
+        } else {
+          const pgid = tracked.pgid ?? tracked.process.pid;
+          if (pgid !== undefined) {
+            process.kill(-pgid, 'SIGKILL');
+          }
+          resolve();
         }
-      } else {
-        const pgid = tracked.pgid ?? tracked.process.pid;
-        if (pgid !== undefined) {
-          process.kill(-pgid, 'SIGKILL');
-        }
+      } catch {
+        // Process may have already exited
+        resolve();
       }
-    } catch {
-      // Process may have already exited
-    }
+    });
   }
 
-  async run(config: ResolvedConfig): Promise<{ onExit: Promise<number | null> }> {
+  private watchReady(proc: ChildProcess): Promise<{ detected: boolean }> {
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finish = (detected: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        resolve({ detected });
+      };
+      const timer = setTimeout(() => finish(false), READY_TIMEOUT_MS);
+      timer.unref?.();
+      const watch = (chunk: Buffer) => {
+        if (resolved) return;
+        if (READY_PATTERN.test(chunk.toString())) {
+          finish(true);
+        }
+      };
+      proc.stdout?.on('data', watch);
+      proc.stderr?.on('data', watch);
+      proc.on('close', () => finish(false));
+    });
+  }
+
+  async run(config: ResolvedConfig): Promise<RunResult> {
     const serverId = config.server.id;
 
     if (this.isRunning(serverId)) {
@@ -102,10 +175,10 @@ export class ProcessRunner {
     }
 
     const scriptPath = this.getStartupScript(config);
-    if (!fs.existsSync(scriptPath)) {
+    if (!await pathExists(scriptPath)) {
       throw new Error(`Startup script not found: ${scriptPath}`);
     }
-    const startArgs = config.server.startupScript ? [] : ['run'];
+    const startArgs = this.getStartupArgs(config);
     this.outputChannel.appendLine(`Starting ${config.server.name} (${scriptPath} ${startArgs.join(' ')})...`);
     this.outputChannel.show(true);
 
@@ -116,23 +189,27 @@ export class ProcessRunner {
     };
 
     this.processes.set(serverId, tracked);
+    this._onDidChangeRunning.fire();
     this.pipeOutput(proc, config.server.name);
+    const ready = this.watchReady(proc);
 
     const onExit = new Promise<number | null>((resolve) => {
       proc.on('close', (code) => {
         this.outputChannel.appendLine(`[${config.server.name}] Process exited with code ${code}`);
         this.processes.delete(serverId);
+        this._onDidChangeRunning.fire();
         resolve(code);
       });
 
       proc.on('error', (err) => {
         this.outputChannel.appendLine(`[${config.server.name}] Error: ${err.message}`);
         this.processes.delete(serverId);
+        this._onDidChangeRunning.fire();
         resolve(null);
       });
     });
 
-    return { onExit };
+    return { onExit, ready };
   }
 
   async stop(config: ResolvedConfig): Promise<void> {
@@ -140,10 +217,10 @@ export class ProcessRunner {
     const tracked = this.processes.get(serverId);
 
     const scriptPath = this.getShutdownScript(config);
-    if (!fs.existsSync(scriptPath)) {
+    if (!await pathExists(scriptPath)) {
       throw new Error(`Shutdown script not found: ${scriptPath}`);
     }
-    const stopArgs = config.server.shutdownScript ? [] : ['stop'];
+    const stopArgs = this.getShutdownArgs(config);
     this.outputChannel.appendLine(`Stopping ${config.server.name} (${scriptPath} ${stopArgs.join(' ')})...`);
 
     const shutdownProc = this.spawnScript(scriptPath, stopArgs, config);
@@ -159,7 +236,6 @@ export class ProcessRunner {
       return;
     }
 
-    // Wait for the tracked process to exit, or force kill after timeout
     const exited = await new Promise<boolean>((resolve) => {
       const timeout = setTimeout(() => resolve(false), STOP_TIMEOUT_MS);
 
@@ -168,7 +244,6 @@ export class ProcessRunner {
         resolve(true);
       });
 
-      // If already exited
       if (tracked.process.exitCode !== null) {
         clearTimeout(timeout);
         resolve(true);
@@ -177,7 +252,7 @@ export class ProcessRunner {
 
     if (!exited) {
       this.outputChannel.appendLine(`[${config.server.name}] Graceful shutdown timed out. Force killing...`);
-      this.forceKill(tracked);
+      await this.forceKill(tracked);
     }
 
     this.processes.delete(serverId);
@@ -188,9 +263,9 @@ export class ProcessRunner {
     if (!tracked) {
       return false;
     }
-    // Check if process has already exited
     if (tracked.process.exitCode !== null) {
       this.processes.delete(serverId);
+      this._onDidChangeRunning.fire();
       return false;
     }
     return true;
@@ -198,8 +273,18 @@ export class ProcessRunner {
 
   killAll(): void {
     for (const [serverId, tracked] of this.processes) {
-      this.forceKill(tracked);
+      void this.forceKill(tracked);
       this.processes.delete(serverId);
     }
+    this._onDidChangeRunning.fire();
+  }
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
   }
 }

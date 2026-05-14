@@ -4,7 +4,9 @@ export interface TomcatServer {
   tomcatHome: string;
   jdkHome: string;
   startupScript?: string;
+  startupArgs?: string[];
   shutdownScript?: string;
+  shutdownArgs?: string[];
   defaultCatalinaOpts?: string;
   defaultJavaOpts?: string;
 }
@@ -31,4 +33,6 @@ export interface TomcatLaunchConfig {
   attachDelay?: number;
   catalinaOpts?: string;
   javaOpts?: string;
+  /** Injected by TomcatDebugConfigProvider so the adapter can scope launch.json reads. */
+  __workspaceFolderUri?: string;
 }

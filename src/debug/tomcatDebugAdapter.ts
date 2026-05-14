@@ -43,7 +43,6 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
   constructor(
     private processRunner: ProcessRunner,
     private configLoader: ConfigLoader,
-    private outputChannel: vscode.OutputChannel,
     private manager: TomcatManager,
   ) {}
 
@@ -99,7 +98,7 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
     }
 
     try {
-      const folderUri = (launchConfig as any).__workspaceFolderUri;
+      const folderUri = launchConfig.__workspaceFolderUri;
       const workspaceFolder = folderUri
         ? vscode.workspace.workspaceFolders?.find(f => f.uri.toString() === folderUri)
         : undefined;
@@ -109,8 +108,12 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
       this.activeServerId = serverId;
       this.sendResponse(request, true);
 
-      // When the process exits, send TerminatedEvent
+      // When the process exits, cancel any pending attach and send TerminatedEvent
       onExit.then(() => {
+        if (this.attachTimer) {
+          clearTimeout(this.attachTimer);
+          this.attachTimer = undefined;
+        }
         this.activeLaunchConfig = undefined;
         this.activeServerId = undefined;
         this.sendEvent('terminated');
@@ -161,7 +164,7 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
       resolved = this.configLoader.resolveForServer(launchConfig.serverId);
     } else {
       // Try workspace launch.json (serverId + catalinaOpts/javaOpts)
-      const folderUri = (launchConfig as any).__workspaceFolderUri;
+      const folderUri = launchConfig.__workspaceFolderUri;
       const folder = folderUri
         ? { uri: vscode.Uri.parse(folderUri) } as vscode.WorkspaceFolder
         : undefined;

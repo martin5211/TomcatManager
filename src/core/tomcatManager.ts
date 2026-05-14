@@ -3,7 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLoader } from './configLoader';
 import { ProcessRunner } from './processRunner';
-import { ResolvedConfig, TomcatServer } from '../types/config';
+import { ResolvedConfig } from '../types/config';
+
+const WEBAPPS_PRESERVED = new Set(['ROOT', 'manager', 'host-manager', 'examples', 'docs']);
+const WAR_SEARCH_SUBDIRS = [['target'], ['build', 'libs'], ['dist'], []];
 
 export class TomcatManager {
   constructor(
@@ -32,13 +35,12 @@ export class TomcatManager {
       return config;
     }
 
-    // Try to resolve from workspace settings
-    const config = this.configLoader.resolveFromWorkspace();
+    const folder = this.getActiveWorkspaceFolder();
+    const config = this.configLoader.resolveFromWorkspace(folder);
     if (config) {
       return config;
     }
 
-    // No workspace mapping — let user pick a server
     return this.pickServer();
   }
 
@@ -58,7 +60,7 @@ export class TomcatManager {
       return undefined;
     }
 
-    return this.configLoader.resolveForServer(picked.server.id);
+    return this.configLoader.resolveForServerInWorkspace(picked.server.id, this.getActiveWorkspaceFolder());
   }
 
   async run(serverId?: string): Promise<void> {
@@ -69,8 +71,8 @@ export class TomcatManager {
 
     try {
       await this.deployOnly(config);
-      await this.processRunner.run(config);
-      vscode.window.showInformationMessage(`${config.server.name} started.`);
+      const { ready } = await this.processRunner.run(config);
+      void this.reportReady(config, ready);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`Failed to start: ${msg}`);
@@ -103,11 +105,24 @@ export class TomcatManager {
         await this.processRunner.stop(config);
       }
       await this.deployOnly(config);
-      await this.processRunner.run(config);
-      vscode.window.showInformationMessage(`${config.server.name} restarted.`);
+      const { ready } = await this.processRunner.run(config);
+      void this.reportReady(config, ready, 'restarted');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`Failed to restart: ${msg}`);
+    }
+  }
+
+  private async reportReady(
+    config: ResolvedConfig,
+    ready: Promise<{ detected: boolean }>,
+    verb: 'started' | 'restarted' = 'started',
+  ): Promise<void> {
+    const { detected } = await ready;
+    if (detected) {
+      this.outputChannel.appendLine(`[${config.server.name}] ${verb} (server startup complete).`);
+    } else {
+      this.outputChannel.appendLine(`[${config.server.name}] ${verb} (readiness signal not detected within 60s; check logs above).`);
     }
   }
 
@@ -131,49 +146,58 @@ export class TomcatManager {
       return undefined;
     }
 
-    // Look for WAR files in common build output locations
-    const searchDirs = [
-      path.join(folder.uri.fsPath, 'target'),
-      path.join(folder.uri.fsPath, 'build', 'libs'),
-      path.join(folder.uri.fsPath, 'dist'),
-      folder.uri.fsPath,
-    ];
-
-    let warFile: string | undefined;
-    for (const dir of searchDirs) {
-      if (!fs.existsSync(dir)) {
-        continue;
-      }
-      const files = fs.readdirSync(dir).filter(f => f.endsWith('.war'));
-      if (files.length > 0) {
-        if (files.length === 1) {
-          warFile = path.join(dir, files[0]);
-        } else {
-          const items = files.map(f => ({ label: f, filePath: path.join(dir, f) }));
-          const picked = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Multiple WAR files found. Select one to deploy.',
-          });
-          warFile = picked?.filePath;
-        }
-        break;
-      }
-    }
-
+    const warFile = await this.findWar(folder.uri.fsPath);
     if (!warFile) {
       this.outputChannel.appendLine('No WAR file found — skipping deploy.');
       return undefined;
     }
 
     const webappsDir = path.join(config.server.tomcatHome, 'webapps');
-    if (!fs.existsSync(webappsDir)) {
-      fs.mkdirSync(webappsDir, { recursive: true });
+    if (!await pathExists(webappsDir)) {
+      await fs.promises.mkdir(webappsDir, { recursive: true });
     }
 
     const warName = path.basename(warFile);
     const destPath = path.join(webappsDir, warName);
-    fs.copyFileSync(warFile, destPath);
+    if (await pathExists(destPath)) {
+      this.outputChannel.appendLine(`[${config.server.name}] Overwriting existing ${warName} in webapps/`);
+    }
+
+    try {
+      await fs.promises.copyFile(warFile, destPath);
+    } catch (err: any) {
+      if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
+        throw new Error(
+          `Cannot deploy: ${warName} is locked (likely held by ${config.server.name}). ` +
+          `Stop the server or disable Tomcat's autoDeploy lock and try again.`,
+        );
+      }
+      throw err;
+    }
     this.outputChannel.appendLine(`Deployed ${warName} to ${webappsDir}`);
     return warName;
+  }
+
+  private async findWar(workspaceRoot: string): Promise<string | undefined> {
+    for (const segments of WAR_SEARCH_SUBDIRS) {
+      const dir = path.join(workspaceRoot, ...segments);
+      if (!await pathExists(dir)) {
+        continue;
+      }
+      const entries = (await fs.promises.readdir(dir)).filter(f => f.endsWith('.war'));
+      if (entries.length === 0) {
+        continue;
+      }
+      if (entries.length === 1) {
+        return path.join(dir, entries[0]);
+      }
+      const items = entries.map(f => ({ label: f, filePath: path.join(dir, f) }));
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Multiple WAR files found. Select one to deploy.',
+      });
+      return picked?.filePath;
+    }
+    return undefined;
   }
 
   async clean(serverId?: string): Promise<void> {
@@ -182,41 +206,31 @@ export class TomcatManager {
       return;
     }
 
-    // Stop if running
     if (this.processRunner.isRunning(config.server.id)) {
       this.outputChannel.appendLine(`Stopping ${config.server.name} before cleaning...`);
       await this.processRunner.stop(config);
     }
 
-    const dirsToClean = [
-      path.join(config.server.tomcatHome, 'work'),
-      path.join(config.server.tomcatHome, 'temp'),
-    ];
-
-    for (const dir of dirsToClean) {
-      if (fs.existsSync(dir)) {
-        const entries = fs.readdirSync(dir);
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry);
-          fs.rmSync(fullPath, { recursive: true, force: true });
-        }
-        this.outputChannel.appendLine(`Cleaned ${dir}`);
+    for (const sub of ['work', 'temp']) {
+      const dir = path.join(config.server.tomcatHome, sub);
+      if (!await pathExists(dir)) {
+        continue;
       }
+      const entries = await fs.promises.readdir(dir);
+      await Promise.all(entries.map(e =>
+        fs.promises.rm(path.join(dir, e), { recursive: true, force: true })
+      ));
+      this.outputChannel.appendLine(`Cleaned ${dir}`);
     }
 
-    // Clean webapps/ but preserve default Tomcat apps
     const webappsDir = path.join(config.server.tomcatHome, 'webapps');
-    const preservedApps = new Set(['ROOT', 'manager', 'host-manager']);
-    if (fs.existsSync(webappsDir)) {
-      const entries = fs.readdirSync(webappsDir);
-      for (const entry of entries) {
-        if (preservedApps.has(entry)) {
-          continue;
-        }
-        const fullPath = path.join(webappsDir, entry);
-        fs.rmSync(fullPath, { recursive: true, force: true });
-      }
-      this.outputChannel.appendLine(`Cleaned ${webappsDir} (preserved ${[...preservedApps].join(', ')})`);
+    if (await pathExists(webappsDir)) {
+      const entries = await fs.promises.readdir(webappsDir);
+      await Promise.all(entries
+        .filter(e => !WEBAPPS_PRESERVED.has(e))
+        .map(e => fs.promises.rm(path.join(webappsDir, e), { recursive: true, force: true }))
+      );
+      this.outputChannel.appendLine(`Cleaned ${webappsDir} (preserved ${[...WEBAPPS_PRESERVED].join(', ')})`);
     }
 
     vscode.window.showInformationMessage(`${config.server.name} work/, temp/, and webapps/ directories cleaned.`);
@@ -224,5 +238,14 @@ export class TomcatManager {
 
   dispose(): void {
     this.processRunner.killAll();
+  }
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
   }
 }

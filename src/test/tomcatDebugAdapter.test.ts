@@ -21,9 +21,10 @@ function createMocks() {
   const onExit = new Promise<number | null>((resolve) => {
     exitResolve.resolve = resolve;
   });
+  const ready = new Promise<{ detected: boolean }>(() => { /* never resolves in tests */ });
 
   const processRunner = {
-    run: jest.fn().mockResolvedValue({ onExit }),
+    run: jest.fn().mockResolvedValue({ onExit, ready }),
     stop: jest.fn().mockResolvedValue(undefined),
     isRunning: jest.fn().mockReturnValue(false),
     killAll: jest.fn(),
@@ -36,23 +37,17 @@ function createMocks() {
     loadConfig: jest.fn(),
   };
 
-  const outputChannel = {
-    appendLine: jest.fn(),
-    show: jest.fn(),
-  };
-
   const manager = {
     deployOnly: jest.fn().mockResolvedValue(undefined),
   };
 
-  return { processRunner, configLoader, outputChannel, manager, exitResolve };
+  return { processRunner, configLoader, manager, exitResolve };
 }
 
 function createAdapter(mocks: ReturnType<typeof createMocks>) {
   return new TomcatDebugAdapter(
     mocks.processRunner as any,
     mocks.configLoader as any,
-    mocks.outputChannel as any,
     mocks.manager as any,
   );
 }
@@ -173,6 +168,37 @@ describe('TomcatDebugAdapter', () => {
 
     expect(response.success).toBe(false);
     expect(response.message).toContain('already running');
+  });
+
+  it('clears the JPDA attach timer when the process exits before attachDelay', async () => {
+    jest.useFakeTimers();
+    try {
+      const mocks = createMocks();
+      const adapter = createAdapter(mocks);
+
+      await sendRequest(adapter, 'launch', {
+        type: 'tomcat',
+        request: 'launch',
+        name: 'Debug Tomcat',
+        serverId: 'tomcat9',
+        jpda: true,
+        jpdaPort: 5005,
+        attachDelay: 5000,
+      });
+
+      // Tomcat dies before the 5s attach delay elapses
+      mocks.exitResolve.resolve!(0);
+      // Let the onExit microtask run, then advance past the attach delay
+      await Promise.resolve();
+      jest.advanceTimersByTime(10_000);
+
+      const vscodeMock = require('vscode');
+      expect(vscodeMock.debug.startDebugging).not.toHaveBeenCalled();
+
+      adapter.dispose();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('returns error when config cannot be resolved', async () => {

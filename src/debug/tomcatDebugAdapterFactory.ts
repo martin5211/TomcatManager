@@ -8,12 +8,11 @@ export class TomcatDebugAdapterFactory implements vscode.DebugAdapterDescriptorF
   constructor(
     private processRunner: ProcessRunner,
     private configLoader: ConfigLoader,
-    private outputChannel: vscode.OutputChannel,
     private manager: TomcatManager,
   ) {}
 
   createDebugAdapterDescriptor(): vscode.DebugAdapterDescriptor {
-    const adapter = new TomcatDebugAdapter(this.processRunner, this.configLoader, this.outputChannel, this.manager);
+    const adapter = new TomcatDebugAdapter(this.processRunner, this.configLoader, this.manager);
     return new vscode.DebugAdapterInlineImplementation(adapter);
   }
 }

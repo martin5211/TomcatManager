@@ -14,6 +14,7 @@ import { TomcatDebugAdapterFactory } from './debug/tomcatDebugAdapterFactory';
 export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel('Tomcat Manager');
   const configLoader = new ConfigLoader();
+  configLoader.setWarner((msg) => outputChannel.appendLine(`[config] ${msg}`));
   const processRunner = new ProcessRunner(outputChannel);
   const manager = new TomcatManager(configLoader, processRunner, outputChannel);
 
@@ -22,9 +23,33 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   const debugProvider = new TomcatDebugConfigProvider(configLoader);
-  const debugFactory = new TomcatDebugAdapterFactory(processRunner, configLoader, outputChannel, manager);
+  const debugFactory = new TomcatDebugAdapterFactory(processRunner, configLoader, manager);
+
+  const updateRunButtonContext = () => {
+    void vscode.commands.executeCommand(
+      'setContext',
+      'tomcatManager.hasLaunchConfig',
+      configLoader.hasTomcatLaunchConfig(),
+    );
+  };
+  const updateIsRunningContext = () => {
+    void vscode.commands.executeCommand(
+      'setContext',
+      'tomcatManager.isRunning',
+      processRunner.isAnyRunning(),
+    );
+  };
+  updateRunButtonContext();
+  updateIsRunningContext();
 
   context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('launch')) {
+        updateRunButtonContext();
+      }
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(updateRunButtonContext),
+    processRunner.onDidChangeRunning(updateIsRunningContext),
     configLoader.watchConfig(() => configLoader.loadConfig().catch((err: unknown) => {
       outputChannel.appendLine(`Config reload failed: ${err instanceof Error ? err.message : String(err)}`);
     })),

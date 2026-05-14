@@ -1,8 +1,17 @@
 .vscode/**
 .vscode-test/**
 src/**
+out/test/**
 node_modules/**
 .gitignore
+.claude/**
+.github/**
 tsconfig.json
 **/*.ts
 **/*.map
+*.vsix
+examples/**
+schemas/**
+jest.config.js
+INSTALL.md
+PRIVACY.md

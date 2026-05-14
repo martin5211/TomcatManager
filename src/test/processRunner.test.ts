@@ -1,9 +1,11 @@
 import { EventEmitter } from 'events';
 import { ProcessRunner } from '../core/processRunner';
 
-// Mock fs
+// Mock fs (only fs.promises.access is used by the runner now)
 jest.mock('fs', () => ({
-  existsSync: jest.fn().mockReturnValue(true),
+  promises: {
+    access: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 // Mock child_process
@@ -46,7 +48,7 @@ const outputChannel = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (fs.existsSync as jest.Mock).mockReturnValue(true);
+  (fs.promises.access as jest.Mock).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -84,7 +86,6 @@ describe('ProcessRunner', () => {
       const runner = new ProcessRunner(outputChannel as any);
       await runner.run(sampleConfig as any);
 
-      // Simulate process exit
       fakeProc.exitCode = 0;
       fakeProc.emit('close', 0);
 
@@ -104,7 +105,7 @@ describe('ProcessRunner', () => {
     });
 
     it('throws if startup script not found', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fs.promises.access as jest.Mock).mockRejectedValue(new Error('ENOENT'));
 
       const runner = new ProcessRunner(outputChannel as any);
       await expect(runner.run(sampleConfig as any)).rejects.toThrow('Startup script not found');
@@ -133,6 +134,94 @@ describe('ProcessRunner', () => {
       const code = await onExit;
       expect(code).toBe(0);
     });
+
+    it('returns ready promise that resolves with detected:true on Tomcat startup line', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const runner = new ProcessRunner(outputChannel as any);
+      const { ready } = await runner.run(sampleConfig as any);
+
+      fakeProc.stdout.emit('data', Buffer.from('INFO Server startup in 2543 ms\n'));
+
+      await expect(ready).resolves.toEqual({ detected: true });
+    });
+
+    it('returns ready promise that resolves with detected:false on early exit', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const runner = new ProcessRunner(outputChannel as any);
+      const { ready } = await runner.run(sampleConfig as any);
+
+      fakeProc.exitCode = 1;
+      fakeProc.emit('close', 1);
+
+      await expect(ready).resolves.toEqual({ detected: false });
+    });
+  });
+
+  describe('pipeOutput buffering', () => {
+    it('joins log lines split across multiple chunks', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const runner = new ProcessRunner(outputChannel as any);
+      await runner.run(sampleConfig as any);
+
+      (outputChannel.appendLine as jest.Mock).mockClear();
+
+      fakeProc.stdout.emit('data', Buffer.from('First line\nSecond half'));
+      fakeProc.stdout.emit('data', Buffer.from(' of second\nThird line\n'));
+
+      const logged = (outputChannel.appendLine as jest.Mock).mock.calls.map(c => c[0]);
+      expect(logged).toContain('[Tomcat 9] First line');
+      expect(logged).toContain('[Tomcat 9] Second half of second');
+      expect(logged).toContain('[Tomcat 9] Third line');
+      // Should NOT have logged the partial "Second half" alone
+      expect(logged).not.toContain('[Tomcat 9] Second half');
+    });
+  });
+
+  describe('buildEnv', () => {
+    it('does not set JAVA_OPTS / CATALINA_OPTS when config opts are empty', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+      const previousJavaOpts = process.env.JAVA_OPTS;
+      const previousCatalinaOpts = process.env.CATALINA_OPTS;
+      process.env.JAVA_OPTS = '-Xmx2g';
+      process.env.CATALINA_OPTS = '-Dfoo=bar';
+
+      try {
+        const runner = new ProcessRunner(outputChannel as any);
+        await runner.run(sampleConfig as any);
+
+        const spawnCall = mockSpawn.mock.calls[0];
+        const opts = spawnCall[2];
+        // Empty config opts should leave the user's env untouched
+        expect(opts.env.JAVA_OPTS).toBe('-Xmx2g');
+        expect(opts.env.CATALINA_OPTS).toBe('-Dfoo=bar');
+      } finally {
+        process.env.JAVA_OPTS = previousJavaOpts;
+        process.env.CATALINA_OPTS = previousCatalinaOpts;
+      }
+    });
+
+    it('sets JAVA_OPTS / CATALINA_OPTS when provided', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const runner = new ProcessRunner(outputChannel as any);
+      await runner.run({
+        server: sampleServer,
+        catalinaOpts: '-Xms256m',
+        javaOpts: '-Denv=test',
+      } as any);
+
+      const opts = mockSpawn.mock.calls[0][2];
+      expect(opts.env.JAVA_OPTS).toBe('-Denv=test');
+      expect(opts.env.CATALINA_OPTS).toBe('-Xms256m');
+    });
   });
 
   describe('stop', () => {
@@ -143,7 +232,7 @@ describe('ProcessRunner', () => {
       const runner = new ProcessRunner(outputChannel as any);
       await runner.run(sampleConfig as any);
 
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fs.promises.access as jest.Mock).mockRejectedValue(new Error('ENOENT'));
 
       await expect(runner.stop(sampleConfig as any)).rejects.toThrow('Shutdown script not found');
     });
@@ -155,20 +244,56 @@ describe('ProcessRunner', () => {
       const runner = new ProcessRunner(outputChannel as any);
       await runner.run(sampleConfig as any);
 
-      // Mock the shutdown spawn
       const shutdownProc = createFakeProcess();
       mockSpawn.mockReturnValueOnce(shutdownProc);
 
       const stopPromise = runner.stop(sampleConfig as any);
 
-      // Simulate shutdown process completing
+      // Flush microtasks so stop()'s async script-existence check completes
+      // and listeners are attached before we emit close events.
+      await new Promise(r => setImmediate(r));
+
       shutdownProc.emit('close', 0);
-      // Simulate main process exiting
       startProc.exitCode = 0;
       startProc.emit('close', 0);
 
       await stopPromise;
       expect(runner.isRunning('tomcat9')).toBe(false);
+    });
+  });
+
+  describe('isAnyRunning + onDidChangeRunning', () => {
+    it('isAnyRunning returns false when nothing has been spawned', () => {
+      const runner = new ProcessRunner(outputChannel as any);
+      expect(runner.isAnyRunning()).toBe(false);
+    });
+
+    it('isAnyRunning flips true after run and false after process close', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const runner = new ProcessRunner(outputChannel as any);
+      await runner.run(sampleConfig as any);
+      expect(runner.isAnyRunning()).toBe(true);
+
+      fakeProc.exitCode = 0;
+      fakeProc.emit('close', 0);
+      expect(runner.isAnyRunning()).toBe(false);
+    });
+
+    it('onDidChangeRunning fires on spawn and on close', async () => {
+      const fakeProc = createFakeProcess();
+      mockSpawn.mockReturnValue(fakeProc);
+
+      const runner = new ProcessRunner(outputChannel as any);
+      const fired: boolean[] = [];
+      runner.onDidChangeRunning(() => fired.push(runner.isAnyRunning()));
+
+      await runner.run(sampleConfig as any);
+      fakeProc.exitCode = 0;
+      fakeProc.emit('close', 0);
+
+      expect(fired).toEqual([true, false]);
     });
   });
 
@@ -184,7 +309,6 @@ describe('ProcessRunner', () => {
 
       runner.killAll();
 
-      // After killAll, the process map is cleared
       expect(runner.isRunning('tomcat9')).toBe(false);
     });
   });

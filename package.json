@@ -2,7 +2,7 @@
   "name": "tomcat-manager",
   "displayName": "Tomcat Manager for VS Code",
   "description": "Manage multiple Tomcat servers with per-project configuration overrides",
-  "version": "0.3.2",
+  "version": "0.3.5",
   "publisher": "MartinCaminoa",
   "repository": {
     "type": "git",
@@ -37,11 +37,13 @@
       },
       {
         "command": "tomcatManager.run",
-        "title": "Tomcat: Run"
+        "title": "Tomcat: Run",
+        "icon": "$(play)"
       },
       {
         "command": "tomcatManager.stop",
-        "title": "Tomcat: Stop"
+        "title": "Tomcat: Stop",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "tomcatManager.restart",
@@ -130,6 +132,20 @@
         ]
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "tomcatManager.run",
+          "group": "navigation",
+          "when": "tomcatManager.hasLaunchConfig && !tomcatManager.isRunning && (resourceLangId == java || resourceExtname == .properties) && !(resourcePath =~ /[\\\\/]src[\\\\/]test[\\\\/]/)"
+        },
+        {
+          "command": "tomcatManager.stop",
+          "group": "navigation",
+          "when": "tomcatManager.hasLaunchConfig && tomcatManager.isRunning && (resourceLangId == java || resourceExtname == .properties) && !(resourcePath =~ /[\\\\/]src[\\\\/]test[\\\\/]/)"
+        }
+      ]
+    },
     "configuration": {
       "title": "Tomcat Manager",
       "properties": {

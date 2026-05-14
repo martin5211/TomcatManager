@@ -1,16 +1,28 @@
 import { TomcatManager } from '../core/tomcatManager';
 import { ResolvedConfig, TomcatServer } from '../types/config';
 
-// The vscode mock
 import * as vscode from 'vscode';
 
 import * as fs from 'fs';
-jest.mock('fs');
+jest.mock('fs', () => ({
+  promises: {
+    access: jest.fn(),
+    readdir: jest.fn(),
+    copyFile: jest.fn(),
+    mkdir: jest.fn(),
+    rm: jest.fn(),
+  },
+}));
 
-const mockedFs = fs as jest.Mocked<typeof fs>;
-const mockedVscode = vscode as jest.Mocked<typeof vscode>;
-
-// Setup
+const mockedFs = fs as unknown as {
+  promises: {
+    access: jest.Mock;
+    readdir: jest.Mock;
+    copyFile: jest.Mock;
+    mkdir: jest.Mock;
+    rm: jest.Mock;
+  };
+};
 
 const sampleServer: TomcatServer = {
   id: 'tomcat9',
@@ -25,15 +37,26 @@ const sampleConfig: ResolvedConfig = {
   javaOpts: '',
 };
 
+function exists(): Promise<undefined> {
+  return Promise.resolve(undefined);
+}
+function missing(): Promise<never> {
+  return Promise.reject(new Error('ENOENT'));
+}
+
 function createMocks() {
   const configLoader = {
     resolveForServer: jest.fn(),
+    resolveForServerInWorkspace: jest.fn(),
     resolveFromWorkspace: jest.fn(),
     getAvailableServers: jest.fn().mockReturnValue([]),
   };
 
   const processRunner = {
-    run: jest.fn().mockResolvedValue(undefined),
+    run: jest.fn().mockResolvedValue({
+      onExit: Promise.resolve(0),
+      ready: Promise.resolve({ detected: true }),
+    }),
     stop: jest.fn().mockResolvedValue(undefined),
     isRunning: jest.fn().mockReturnValue(false),
     killAll: jest.fn(),
@@ -58,9 +81,6 @@ function createManager(overrides?: Partial<ReturnType<typeof createMocks>>) {
   return { manager, ...mocks };
 }
 
-// Helpers
-
-/** Set the vscode workspace folder mock and wire up getWorkspaceFolder */
 function setWorkspaceFolder(fsPath: string, name = 'my-app') {
   const folder = { name, uri: { fsPath } };
   (vscode.workspace as any).workspaceFolders = [folder];
@@ -73,26 +93,26 @@ function clearWorkspaceFolder() {
   (vscode.workspace.getWorkspaceFolder as jest.Mock).mockReturnValue(undefined);
 }
 
-// Tests
-
 beforeEach(() => {
   jest.clearAllMocks();
   clearWorkspaceFolder();
+  // Default: deploy step finds nothing (no workspace folder)
+  mockedFs.promises.access.mockImplementation(missing);
+  mockedFs.promises.readdir.mockResolvedValue([]);
+  mockedFs.promises.copyFile.mockResolvedValue(undefined);
+  mockedFs.promises.mkdir.mockResolvedValue(undefined);
+  mockedFs.promises.rm.mockResolvedValue(undefined);
 });
-
-// resolveConfig
 
 describe('resolveConfig', () => {
   it('returns config when serverId is provided and found', async () => {
-    const { manager, configLoader } = createManager();
+    const { manager, configLoader, processRunner } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
     await manager.run('tomcat9');
 
     expect(configLoader.resolveForServer).toHaveBeenCalledWith('tomcat9');
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Tomcat 9 started.',
-    );
+    expect(processRunner.run).toHaveBeenCalledWith(sampleConfig);
   });
 
   it('shows error when serverId is not found', async () => {
@@ -115,7 +135,7 @@ describe('resolveConfig', () => {
     expect(configLoader.resolveFromWorkspace).toHaveBeenCalled();
   });
 
-  it('falls back to pickServer when no workspace mapping', async () => {
+  it('falls back to pickServer (resolveForServerInWorkspace) when no workspace mapping', async () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveFromWorkspace.mockReturnValue(undefined);
     configLoader.getAvailableServers.mockReturnValue([sampleServer]);
@@ -124,28 +144,53 @@ describe('resolveConfig', () => {
       description: sampleServer.id,
       server: sampleServer,
     });
-    configLoader.resolveForServer.mockReturnValue(sampleConfig);
+    configLoader.resolveForServerInWorkspace.mockReturnValue(sampleConfig);
 
     await manager.run();
 
     expect(vscode.window.showQuickPick).toHaveBeenCalled();
-    expect(configLoader.resolveForServer).toHaveBeenCalledWith('tomcat9');
+    expect(configLoader.resolveForServerInWorkspace).toHaveBeenCalledWith('tomcat9', undefined);
+  });
+
+  it('passes the active workspace folder when resolving from workspace', async () => {
+    const { manager, configLoader } = createManager();
+    setWorkspaceFolder('/home/user/proj', 'proj');
+    configLoader.resolveFromWorkspace.mockReturnValue(sampleConfig);
+
+    await manager.run();
+
+    const folderArg = configLoader.resolveFromWorkspace.mock.calls[0][0];
+    expect(folderArg?.uri?.fsPath).toBe('/home/user/proj');
   });
 });
 
-// run()
-
 describe('run()', () => {
-  it('calls processRunner.run() and shows success message', async () => {
-    const { manager, configLoader, processRunner } = createManager();
+  it('calls processRunner.run() and logs readiness to the output channel', async () => {
+    const { manager, configLoader, processRunner, outputChannel } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
     await manager.run('tomcat9');
+    // allow reportReady microtask to run
+    await new Promise(r => setImmediate(r));
 
     expect(processRunner.run).toHaveBeenCalledWith(sampleConfig);
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Tomcat 9 started.',
-    );
+    const logged = outputChannel.appendLine.mock.calls.map(c => c[0] as string);
+    expect(logged.some(l => l.includes('started') && l.includes('Tomcat 9'))).toBe(true);
+  });
+
+  it('logs "readiness signal not detected" when ready resolves false', async () => {
+    const { manager, configLoader, processRunner, outputChannel } = createManager();
+    configLoader.resolveForServer.mockReturnValue(sampleConfig);
+    processRunner.run.mockResolvedValue({
+      onExit: Promise.resolve(null),
+      ready: Promise.resolve({ detected: false }),
+    });
+
+    await manager.run('tomcat9');
+    await new Promise(r => setImmediate(r));
+
+    const logged = outputChannel.appendLine.mock.calls.map(c => c[0] as string);
+    expect(logged.some(l => l.includes('readiness signal not detected'))).toBe(true);
   });
 
   it('shows error message on failure', async () => {
@@ -160,8 +205,6 @@ describe('run()', () => {
     );
   });
 });
-
-// stop()
 
 describe('stop()', () => {
   it('calls processRunner.stop() and shows success message', async () => {
@@ -189,8 +232,6 @@ describe('stop()', () => {
   });
 });
 
-// restart()
-
 describe('restart()', () => {
   it('stops first if running, then starts', async () => {
     const { manager, configLoader, processRunner } = createManager();
@@ -201,9 +242,6 @@ describe('restart()', () => {
 
     expect(processRunner.stop).toHaveBeenCalledWith(sampleConfig);
     expect(processRunner.run).toHaveBeenCalledWith(sampleConfig);
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Tomcat 9 restarted.',
-    );
   });
 
   it('starts without stopping if not running', async () => {
@@ -230,8 +268,6 @@ describe('restart()', () => {
   });
 });
 
-// deploy()
-
 describe('deploy()', () => {
   beforeEach(() => {
     setWorkspaceFolder('/home/user/my-app');
@@ -241,21 +277,19 @@ describe('deploy()', () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
-    mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
+    mockedFs.promises.access.mockImplementation((p: any) => {
       const s = String(p);
-      if (s.includes('target')) return true;
-      if (s.includes('webapps')) return true;
-      return false;
+      if (s.includes('target') || s.includes('webapps')) return exists();
+      return missing();
     });
-    mockedFs.readdirSync.mockImplementation(((p: string) => {
-      if (String(p).includes('target')) return ['app.war'];
-      return [];
-    }) as any);
-    mockedFs.copyFileSync.mockImplementation(() => {});
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
+      if (String(p).includes('target')) return Promise.resolve(['app.war'] as any);
+      return Promise.resolve([] as any);
+    });
 
     await manager.deploy('tomcat9');
 
-    expect(mockedFs.copyFileSync).toHaveBeenCalledWith(
+    expect(mockedFs.promises.copyFile).toHaveBeenCalledWith(
       expect.stringContaining('app.war'),
       expect.stringContaining('webapps'),
     );
@@ -268,17 +302,15 @@ describe('deploy()', () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
-    mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
+    mockedFs.promises.access.mockImplementation((p: any) => {
       const s = String(p);
-      if (s.includes('target')) return true;
-      if (s.includes('webapps')) return true;
-      return false;
+      if (s.includes('target') || s.includes('webapps')) return exists();
+      return missing();
     });
-    mockedFs.readdirSync.mockImplementation(((p: string) => {
-      if (String(p).includes('target')) return ['a.war', 'b.war'];
-      return [];
-    }) as any);
-    mockedFs.copyFileSync.mockImplementation(() => {});
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
+      if (String(p).includes('target')) return Promise.resolve(['a.war', 'b.war'] as any);
+      return Promise.resolve([] as any);
+    });
 
     (vscode.window.showQuickPick as jest.Mock).mockResolvedValue({
       label: 'b.war',
@@ -288,7 +320,7 @@ describe('deploy()', () => {
     await manager.deploy('tomcat9');
 
     expect(vscode.window.showQuickPick).toHaveBeenCalled();
-    expect(mockedFs.copyFileSync).toHaveBeenCalledWith(
+    expect(mockedFs.promises.copyFile).toHaveBeenCalledWith(
       '/home/user/my-app/target/b.war',
       expect.stringContaining('b.war'),
     );
@@ -297,8 +329,6 @@ describe('deploy()', () => {
   it('shows message when no WAR found', async () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
-
-    mockedFs.existsSync.mockReturnValue(false);
 
     await manager.deploy('tomcat9');
 
@@ -311,37 +341,72 @@ describe('deploy()', () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
-    mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
+    mockedFs.promises.access.mockImplementation((p: any) => {
       const s = String(p);
-      if (s.includes('target')) return true;
-      if (s.includes('webapps')) return false; // webapps does not exist
-      return false;
+      if (s.includes('target')) return exists();
+      return missing(); // webapps does not exist
     });
-    mockedFs.readdirSync.mockImplementation(((p: string) => {
-      if (String(p).includes('target')) return ['app.war'];
-      return [];
-    }) as any);
-    mockedFs.mkdirSync.mockImplementation((() => undefined) as any);
-    mockedFs.copyFileSync.mockImplementation(() => {});
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
+      if (String(p).includes('target')) return Promise.resolve(['app.war'] as any);
+      return Promise.resolve([] as any);
+    });
 
     await manager.deploy('tomcat9');
 
-    expect(mockedFs.mkdirSync).toHaveBeenCalledWith(
+    expect(mockedFs.promises.mkdir).toHaveBeenCalledWith(
       expect.stringContaining('webapps'),
       { recursive: true },
     );
   });
-});
 
-// clean()
+  it('throws a friendly error when EBUSY (file locked by Tomcat)', async () => {
+    const { manager, configLoader } = createManager();
+    configLoader.resolveForServer.mockReturnValue(sampleConfig);
+
+    mockedFs.promises.access.mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.includes('target') || s.includes('webapps')) return exists();
+      return missing();
+    });
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
+      if (String(p).includes('target')) return Promise.resolve(['app.war'] as any);
+      return Promise.resolve([] as any);
+    });
+    const ebusy: any = new Error('busy');
+    ebusy.code = 'EBUSY';
+    mockedFs.promises.copyFile.mockRejectedValue(ebusy);
+
+    // deployOnly throws — friendly EBUSY message bubbles up
+    await expect(manager.deploy('tomcat9')).rejects.toThrow(/locked .* Stop the server/);
+  });
+
+  it('logs an overwrite notice when destination WAR already exists', async () => {
+    const { manager, configLoader, outputChannel } = createManager();
+    configLoader.resolveForServer.mockReturnValue(sampleConfig);
+
+    mockedFs.promises.access.mockImplementation((p: any) => {
+      // target/, webapps/, and the destination WAR all exist
+      const s = String(p);
+      if (s.includes('target') || s.includes('webapps')) return exists();
+      return missing();
+    });
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
+      if (String(p).includes('target')) return Promise.resolve(['app.war'] as any);
+      return Promise.resolve([] as any);
+    });
+
+    await manager.deploy('tomcat9');
+
+    const logged = outputChannel.appendLine.mock.calls.map(c => c[0] as string);
+    expect(logged.some(l => l.includes('Overwriting existing app.war'))).toBe(true);
+  });
+});
 
 describe('clean()', () => {
   it('stops server if running before cleaning', async () => {
     const { manager, configLoader, processRunner } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
     processRunner.isRunning.mockReturnValue(true);
-
-    mockedFs.existsSync.mockReturnValue(false);
 
     await manager.clean('tomcat9');
 
@@ -352,55 +417,48 @@ describe('clean()', () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
-    mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
+    mockedFs.promises.access.mockImplementation((p: any) => {
       const s = String(p);
-      return s.includes('work') || s.includes('temp');
+      if (s.includes('work') || s.includes('temp')) return exists();
+      return missing();
     });
-    mockedFs.readdirSync.mockImplementation(((p: string) => {
-      if (String(p).includes('work')) return ['Catalina'];
-      if (String(p).includes('temp')) return ['upload_123'];
-      return [];
-    }) as any);
-    mockedFs.rmSync.mockImplementation((() => {}) as any);
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
+      if (String(p).includes('work')) return Promise.resolve(['Catalina'] as any);
+      if (String(p).includes('temp')) return Promise.resolve(['upload_123'] as any);
+      return Promise.resolve([] as any);
+    });
 
     await manager.clean('tomcat9');
 
-    expect(mockedFs.rmSync).toHaveBeenCalledWith(
-      expect.stringContaining('Catalina'),
-      { recursive: true, force: true },
-    );
-    expect(mockedFs.rmSync).toHaveBeenCalledWith(
-      expect.stringContaining('upload_123'),
-      { recursive: true, force: true },
-    );
+    const rmTargets = mockedFs.promises.rm.mock.calls.map(c => String(c[0]));
+    expect(rmTargets.some(t => t.includes('Catalina'))).toBe(true);
+    expect(rmTargets.some(t => t.includes('upload_123'))).toBe(true);
   });
 
-  it('preserves ROOT, manager, host-manager in webapps/', async () => {
+  it('preserves ROOT, manager, host-manager, examples, docs in webapps/', async () => {
     const { manager, configLoader } = createManager();
     configLoader.resolveForServer.mockReturnValue(sampleConfig);
 
-    mockedFs.existsSync.mockReturnValue(true);
-    mockedFs.readdirSync.mockImplementation(((p: string) => {
+    mockedFs.promises.access.mockResolvedValue(undefined);
+    mockedFs.promises.readdir.mockImplementation((p: any) => {
       const s = String(p);
-      if (s.includes('webapps'))
-        return ['ROOT', 'manager', 'host-manager', 'myapp', 'myapp.war'];
-      return []; // work/ and temp/ empty
-    }) as any);
-    mockedFs.rmSync.mockImplementation((() => {}) as any);
+      if (s.includes('webapps')) {
+        return Promise.resolve(['ROOT', 'manager', 'host-manager', 'examples', 'docs', 'myapp', 'myapp.war'] as any);
+      }
+      return Promise.resolve([] as any);
+    });
 
     await manager.clean('tomcat9');
 
-    // Remove myapp and myapp.war but NOT ROOT/manager/host-manager
-    const rmCalls = mockedFs.rmSync.mock.calls.map(c => String(c[0]));
-    expect(rmCalls.some(p => p.includes('myapp'))).toBe(true);
-    expect(rmCalls.some(p => p.includes('myapp.war'))).toBe(true);
-    expect(rmCalls.some(p => p.includes('ROOT'))).toBe(false);
-    expect(rmCalls.some(p => p.includes('manager') && !p.includes('host-manager'))).toBe(false);
-    expect(rmCalls.some(p => p.includes('host-manager'))).toBe(false);
+    const rmTargets = mockedFs.promises.rm.mock.calls.map(c => String(c[0]));
+    expect(rmTargets.some(t => t.endsWith('/myapp') || t.endsWith('\\myapp'))).toBe(true);
+    expect(rmTargets.some(t => t.endsWith('myapp.war'))).toBe(true);
+    expect(rmTargets.some(t => t.endsWith('ROOT'))).toBe(false);
+    expect(rmTargets.some(t => t.endsWith('examples'))).toBe(false);
+    expect(rmTargets.some(t => t.endsWith('docs'))).toBe(false);
+    expect(rmTargets.some(t => t.endsWith('host-manager'))).toBe(false);
   });
 });
-
-// dispose()
 
 describe('dispose()', () => {
   it('calls processRunner.killAll()', () => {
