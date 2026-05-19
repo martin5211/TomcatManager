@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.6
+
+- Shorter shutdown: graceful stop wait reduced from 10s to 2s, Windows force-kill fallback from 5s to 1s
+- Info notifications (stop/deploy/clean) auto-dismiss after 3s via `withProgress` instead of waiting for manual dismissal
+- Output channel is cleared and focused on each Tomcat run/restart/debug launch
+- Auto-debug: when `-agentlib:jdwp` / `-Xrunjdwp` is detected in resolved `catalinaOpts`/`javaOpts`, `Tomcat: Run` launches via the VS Code debug session so the debug toolbar appears and the Java debugger auto-attaches to the parsed port
+- New settings (all workspace-overridable):
+  - `tomcatManager.stopTimeoutMs` (default 2000) — graceful shutdown wait before force-kill
+  - `tomcatManager.killTimeoutMs` (default 1000) — Windows taskkill fallback timeout
+  - `tomcatManager.hideRunButton` (default false) — hides the editor-title run/stop button
+  - `tomcatManager.stickyNotifications` (default false) — keep info notifications until dismissed
+
 ## 0.3.5
 
 - The editor-title play button toggles to a `$(debug-stop)` stop button while Tomcat is running, and back to play once it exits.

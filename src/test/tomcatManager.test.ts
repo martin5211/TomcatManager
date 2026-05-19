@@ -65,6 +65,7 @@ function createMocks() {
   const outputChannel = {
     appendLine: jest.fn(),
     show: jest.fn(),
+    clear: jest.fn(),
   };
 
   return { configLoader, processRunner, outputChannel };
@@ -204,6 +205,49 @@ describe('run()', () => {
       'Failed to start: port in use',
     );
   });
+
+  it('routes through vscode.debug.startDebugging when -agentlib:jdwp is in opts', async () => {
+    const { manager, configLoader, processRunner } = createManager();
+    setWorkspaceFolder('/home/user/proj');
+    const debugConfig: ResolvedConfig = {
+      server: sampleServer,
+      catalinaOpts: '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005',
+      javaOpts: '',
+    };
+    configLoader.resolveForServer.mockReturnValue(debugConfig);
+
+    const launchCfg = {
+      get: jest.fn().mockReturnValue([{ type: 'tomcat', name: 'Debug Tomcat', serverId: 'tomcat9' }]),
+    };
+    (vscode.workspace.getConfiguration as jest.Mock).mockImplementationOnce(() => launchCfg);
+
+    await manager.run('tomcat9');
+
+    expect(vscode.debug.startDebugging).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: expect.objectContaining({ fsPath: '/home/user/proj' }) }),
+      'Debug Tomcat',
+    );
+    expect(processRunner.run).not.toHaveBeenCalled();
+  });
+
+  it('falls back to direct run when agentlib is detected but no matching launch.json config exists', async () => {
+    const { manager, configLoader, processRunner } = createManager();
+    setWorkspaceFolder('/home/user/proj');
+    const debugConfig: ResolvedConfig = {
+      server: sampleServer,
+      catalinaOpts: '-agentlib:jdwp=transport=dt_socket,address=*:5005',
+      javaOpts: '',
+    };
+    configLoader.resolveForServer.mockReturnValue(debugConfig);
+
+    const launchCfg = { get: jest.fn().mockReturnValue([]) };
+    (vscode.workspace.getConfiguration as jest.Mock).mockImplementationOnce(() => launchCfg);
+
+    await manager.run('tomcat9');
+
+    expect(vscode.debug.startDebugging).not.toHaveBeenCalled();
+    expect(processRunner.run).toHaveBeenCalledWith(debugConfig);
+  });
 });
 
 describe('stop()', () => {
@@ -214,8 +258,9 @@ describe('stop()', () => {
     await manager.stop('tomcat9');
 
     expect(processRunner.stop).toHaveBeenCalledWith(sampleConfig);
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Tomcat 9 stopped.',
+    expect(vscode.window.withProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Tomcat 9 stopped.' }),
+      expect.any(Function),
     );
   });
 
@@ -293,8 +338,9 @@ describe('deploy()', () => {
       expect.stringContaining('app.war'),
       expect.stringContaining('webapps'),
     );
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'Deployed app.war to Tomcat 9.',
+    expect(vscode.window.withProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Deployed app.war to Tomcat 9.' }),
+      expect.any(Function),
     );
   });
 
@@ -332,8 +378,9 @@ describe('deploy()', () => {
 
     await manager.deploy('tomcat9');
 
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'No WAR file found to deploy to Tomcat 9.',
+    expect(vscode.window.withProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'No WAR file found to deploy to Tomcat 9.' }),
+      expect.any(Function),
     );
   });
 

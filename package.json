@@ -2,7 +2,7 @@
   "name": "tomcat-manager",
   "displayName": "Tomcat Manager for VS Code",
   "description": "Manage multiple Tomcat servers with per-project configuration overrides",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "publisher": "MartinCaminoa",
   "repository": {
     "type": "git",
@@ -137,12 +137,12 @@
         {
           "command": "tomcatManager.run",
           "group": "navigation",
-          "when": "tomcatManager.hasLaunchConfig && !tomcatManager.isRunning && (resourceLangId == java || resourceExtname == .properties) && !(resourcePath =~ /[\\\\/]src[\\\\/]test[\\\\/]/)"
+          "when": "!config.tomcatManager.hideRunButton && tomcatManager.hasLaunchConfig && !tomcatManager.isRunning && (resourceLangId == java || resourceExtname == .properties) && !(resourcePath =~ /[\\\\/]src[\\\\/]test[\\\\/]/)"
         },
         {
           "command": "tomcatManager.stop",
           "group": "navigation",
-          "when": "tomcatManager.hasLaunchConfig && tomcatManager.isRunning && (resourceLangId == java || resourceExtname == .properties) && !(resourcePath =~ /[\\\\/]src[\\\\/]test[\\\\/]/)"
+          "when": "!config.tomcatManager.hideRunButton && tomcatManager.hasLaunchConfig && tomcatManager.isRunning && (resourceLangId == java || resourceExtname == .properties) && !(resourcePath =~ /[\\\\/]src[\\\\/]test[\\\\/]/)"
         }
       ]
     },
@@ -192,6 +192,28 @@
             },
             "additionalProperties": false
           }
+        },
+        "tomcatManager.stopTimeoutMs": {
+          "type": "integer",
+          "default": 2000,
+          "minimum": 0,
+          "description": "Milliseconds to wait for Tomcat to exit gracefully after running the shutdown script before force-killing."
+        },
+        "tomcatManager.killTimeoutMs": {
+          "type": "integer",
+          "default": 1000,
+          "minimum": 0,
+          "description": "Milliseconds to wait for the force-kill helper (taskkill on Windows) to report completion before giving up. Windows-only; ignored on POSIX."
+        },
+        "tomcatManager.hideRunButton": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the Tomcat run/stop button shown in the editor title bar for Java and .properties files."
+        },
+        "tomcatManager.stickyNotifications": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep info notifications (stop/deploy/clean confirmations) visible until dismissed manually instead of auto-closing after a few seconds."
         }
       }
     }

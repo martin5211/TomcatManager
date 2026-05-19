@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLoader } from './configLoader';
 import { ProcessRunner } from './processRunner';
+import { showTransientInfo } from './notifications';
+import { detectJdwpPort } from './jdwp';
 import { ResolvedConfig } from '../types/config';
 
 const WEBAPPS_PRESERVED = new Set(['ROOT', 'manager', 'host-manager', 'examples', 'docs']);
@@ -69,6 +71,10 @@ export class TomcatManager {
       return;
     }
 
+    if (await this.tryStartAsDebugSession(config)) {
+      return;
+    }
+
     try {
       await this.deployOnly(config);
       const { ready } = await this.processRunner.run(config);
@@ -79,6 +85,34 @@ export class TomcatManager {
     }
   }
 
+  private async tryStartAsDebugSession(config: ResolvedConfig): Promise<boolean> {
+    const merged = `${config.catalinaOpts} ${config.javaOpts}`;
+    if (detectJdwpPort(merged) === undefined) {
+      return false;
+    }
+    const folder = this.getActiveWorkspaceFolder();
+    const name = this.findTomcatLaunchConfigName(folder, config.server.id);
+    if (!name) {
+      return false;
+    }
+    try {
+      await vscode.debug.startDebugging(folder, name);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private findTomcatLaunchConfigName(folder: vscode.WorkspaceFolder | undefined, serverId: string): string | undefined {
+    const configurations = vscode.workspace
+      .getConfiguration('launch', folder?.uri)
+      .get<any[]>('configurations', []);
+    const match =
+      configurations.find((c: any) => c?.type === 'tomcat' && c.serverId === serverId)
+      ?? configurations.find((c: any) => c?.type === 'tomcat' && !c.serverId);
+    return match?.name;
+  }
+
   async stop(serverId?: string): Promise<void> {
     const config = await this.resolveConfig(serverId);
     if (!config) {
@@ -87,7 +121,7 @@ export class TomcatManager {
 
     try {
       await this.processRunner.stop(config);
-      vscode.window.showInformationMessage(`${config.server.name} stopped.`);
+      showTransientInfo(`${config.server.name} stopped.`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`Failed to stop: ${msg}`);
@@ -103,6 +137,9 @@ export class TomcatManager {
     try {
       if (this.processRunner.isRunning(config.server.id)) {
         await this.processRunner.stop(config);
+      }
+      if (await this.tryStartAsDebugSession(config)) {
+        return;
       }
       await this.deployOnly(config);
       const { ready } = await this.processRunner.run(config);
@@ -136,7 +173,7 @@ export class TomcatManager {
     const msg = warName
       ? `Deployed ${warName} to ${config.server.name}.`
       : `No WAR file found to deploy to ${config.server.name}.`;
-    vscode.window.showInformationMessage(msg);
+    showTransientInfo(msg);
   }
 
   async deployOnly(config: ResolvedConfig, workspaceFolder?: vscode.WorkspaceFolder): Promise<string | undefined> {
@@ -233,7 +270,7 @@ export class TomcatManager {
       this.outputChannel.appendLine(`Cleaned ${webappsDir} (preserved ${[...WEBAPPS_PRESERVED].join(', ')})`);
     }
 
-    vscode.window.showInformationMessage(`${config.server.name} work/, temp/, and webapps/ directories cleaned.`);
+    showTransientInfo(`${config.server.name} work/, temp/, and webapps/ directories cleaned.`);
   }
 
   dispose(): void {

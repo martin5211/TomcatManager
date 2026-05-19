@@ -2,9 +2,16 @@ export const window = {
   showErrorMessage: jest.fn(),
   showInformationMessage: jest.fn(),
   showQuickPick: jest.fn(),
+  withProgress: jest.fn(),
   activeTextEditor: undefined as
     | { document: { uri: { fsPath: string } } }
     | undefined,
+};
+
+export const ProgressLocation = {
+  SourceControl: 1,
+  Window: 10,
+  Notification: 15,
 };
 
 export const workspace = {
@@ -13,7 +20,7 @@ export const workspace = {
     | undefined,
   getWorkspaceFolder: jest.fn(),
   getConfiguration: jest.fn().mockReturnValue({
-    get: jest.fn().mockReturnValue([]),
+    get: jest.fn((_key: string, defaultValue?: unknown) => defaultValue ?? []),
     update: jest.fn().mockResolvedValue(undefined),
   }),
   onDidChangeConfiguration: jest.fn().mockReturnValue({ dispose: jest.fn() }),

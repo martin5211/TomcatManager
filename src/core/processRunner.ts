@@ -11,10 +11,18 @@ interface TrackedProcess {
 
 const IS_WINDOWS = process.platform === 'win32';
 const SCRIPT_EXT = IS_WINDOWS ? '.bat' : '.sh';
-const STOP_TIMEOUT_MS = 10_000;
-const KILL_TIMEOUT_MS = 5_000;
+const DEFAULT_STOP_TIMEOUT_MS = 2_000;
+const DEFAULT_KILL_TIMEOUT_MS = 1_000;
 const READY_TIMEOUT_MS = 60_000;
 const READY_PATTERN = /Server startup in \d+(?:[.,]\d+)?\s*m?s/i;
+
+function getStopTimeoutMs(): number {
+  return vscode.workspace.getConfiguration('tomcatManager').get<number>('stopTimeoutMs', DEFAULT_STOP_TIMEOUT_MS);
+}
+
+function getKillTimeoutMs(): number {
+  return vscode.workspace.getConfiguration('tomcatManager').get<number>('killTimeoutMs', DEFAULT_KILL_TIMEOUT_MS);
+}
 
 export interface RunResult {
   onExit: Promise<number | null>;
@@ -123,7 +131,7 @@ export class ProcessRunner {
             return;
           }
           const kill = spawn('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
-          const fallback = setTimeout(resolve, KILL_TIMEOUT_MS);
+          const fallback = setTimeout(resolve, getKillTimeoutMs());
           const finish = () => {
             clearTimeout(fallback);
             resolve();
@@ -179,8 +187,9 @@ export class ProcessRunner {
       throw new Error(`Startup script not found: ${scriptPath}`);
     }
     const startArgs = this.getStartupArgs(config);
-    this.outputChannel.appendLine(`Starting ${config.server.name} (${scriptPath} ${startArgs.join(' ')})...`);
+    this.outputChannel.clear();
     this.outputChannel.show(true);
+    this.outputChannel.appendLine(`Starting ${config.server.name} (${scriptPath} ${startArgs.join(' ')})...`);
 
     const proc = this.spawnScript(scriptPath, startArgs, config);
     const tracked: TrackedProcess = {
@@ -237,7 +246,7 @@ export class ProcessRunner {
     }
 
     const exited = await new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(false), STOP_TIMEOUT_MS);
+      const timeout = setTimeout(() => resolve(false), getStopTimeoutMs());
 
       tracked.process.on('close', () => {
         clearTimeout(timeout);

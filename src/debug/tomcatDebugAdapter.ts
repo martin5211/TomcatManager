@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ProcessRunner } from '../core/processRunner';
 import { ConfigLoader } from '../core/configLoader';
 import { TomcatManager } from '../core/tomcatManager';
+import { detectJdwpPort } from '../core/jdwp';
 import { TomcatLaunchConfig, ResolvedConfig } from '../types/config';
 
 interface DAPMessage {
@@ -119,10 +120,13 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
         this.sendEvent('terminated');
       });
 
-      // Auto-attach Java debugger if JPDA is enabled
-      if (launchConfig.jpda && (launchConfig.attachJavaDebugger ?? true)) {
+      // Auto-attach Java debugger if JPDA is enabled or if the user
+      // supplied -agentlib:jdwp / -Xrunjdwp directly in their opts.
+      const attachPort = launchConfig.jpda
+        ? (launchConfig.jpdaPort ?? 8000)
+        : detectJdwpPort(`${resolved.catalinaOpts} ${resolved.javaOpts}`);
+      if (attachPort !== undefined && (launchConfig.attachJavaDebugger ?? true)) {
         const delay = launchConfig.attachDelay ?? 3000;
-        const port = launchConfig.jpdaPort ?? 8000;
         this.attachTimer = setTimeout(() => {
           this.attachTimer = undefined;
           vscode.debug.startDebugging(undefined, {
@@ -130,7 +134,7 @@ export class TomcatDebugAdapter implements vscode.DebugAdapter {
             request: 'attach',
             name: 'Attach to Tomcat',
             hostName: 'localhost',
-            port,
+            port: attachPort,
           });
         }, delay);
       }

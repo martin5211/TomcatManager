@@ -44,6 +44,7 @@ function createFakeProcess(): EventEmitter & { pid: number; exitCode: number | n
 const outputChannel = {
   appendLine: jest.fn(),
   show: jest.fn(),
+  clear: jest.fn(),
 };
 
 beforeEach(() => {
